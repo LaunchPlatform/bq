@@ -1,14 +1,38 @@
+import enum
+
 from sqlalchemy import Column
+from sqlalchemy import DateTime
+from sqlalchemy import Enum
 from sqlalchemy import func
+from sqlalchemy import String
 from sqlalchemy.dialects.postgresql import UUID
 
 from ..db.base import Base
 from .helpers import make_repr_attrs
 
 
+class TaskState(enum.Enum):
+    # task just created, not scheduled yet
+    PENDING = "PENDING"
+    # a worker is processing the task right now
+    PROCESSING = "PROCESSING"
+    # the task is done
+    DONE = "DONE"
+    # the task is failed
+    FAILED = "FAILED"
+
+
 class Task(Base):
     id = Column(
         UUID(as_uuid=True), primary_key=True, server_default=func.gen_random_uuid()
+    )
+    # current state of the task
+    state = Column(Enum(TaskState), nullable=False)
+    # name of the processing worker
+    worker = Column(String, nullable=True)
+    # created datetime of the task
+    created_at = Column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
     )
 
     __tablename__ = "bq_tasks"
