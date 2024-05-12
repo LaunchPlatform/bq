@@ -26,6 +26,8 @@ class Task(Base):
     id = Column(
         UUID(as_uuid=True), primary_key=True, server_default=func.gen_random_uuid()
     )
+    # channel for workers and job creator to listen/notify
+    channel = Column(String, nullable=False, index=True)
     # current state of the task
     state = Column(Enum(TaskState), nullable=False)
     # name of the processing worker
