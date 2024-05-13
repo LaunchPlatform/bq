@@ -16,13 +16,18 @@ class DispatchService:
             .with_for_update(skip_locked=True)
         )
         task_subquery = task_query.subquery("locked_tasks")
-        result = session.execute(
-            models.Task.__table__.update()
-            .where(models.Task.id.in_(task_subquery))
-            .values(
-                state=models.TaskState.PROCESSING,
-                worker_id=worker.id,
+        task_ids = [
+            item[0]
+            for item in session.execute(
+                models.Task.__table__.update()
+                .where(models.Task.id.in_(task_subquery))
+                .values(
+                    state=models.TaskState.PROCESSING,
+                    worker_id=worker.id,
+                )
+                .returning(models.Task.id)
             )
-            .returning(models.Task)
-        )
-        return list(result)
+        ]
+        # TODO: ideally returning with (models.Task) should return the whole model, but SQLAlchemy is returning
+        #       it columns in rows. We can save a round trip if we can find out how to solve this
+        return session.query(models.Task).filter(models.Task.id.in_(task_ids))
