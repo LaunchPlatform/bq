@@ -29,3 +29,4 @@ def test_fetch(
     returned_task = tasks[0]
     assert returned_task.state == models.TaskState.PROCESSING
     assert returned_task.worker == worker
+    assert not list(dispatch_service.fetch(task.channel, worker=worker))
