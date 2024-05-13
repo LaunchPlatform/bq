@@ -1,3 +1,5 @@
+import dataclasses
+import select
 import typing
 import uuid
 
@@ -5,6 +7,13 @@ from sqlalchemy.orm import Query
 
 from .. import models
 from ..db.session import Session
+
+
+@dataclasses.dataclass(frozen=True)
+class Notification:
+    pid: int
+    channel: str
+    payload: typing.Optional[str] = None
 
 
 class DispatchService:
@@ -56,3 +65,20 @@ class DispatchService:
             quoted_channel = conn.dialect.identifier_preparer.quote_identifier(channel)
             conn.exec_driver_sql(f"LISTEN {quoted_channel}")
         session.commit()
+
+    def poll(self, timeout: int = 5) -> typing.Generator[Notification, None, None]:
+        session = self.session_cls()
+        conn = session.connection()
+        driver_conn = conn.connection.driver_connection
+        while True:
+            if select.select([driver_conn], [], [], timeout) == ([], [], []):
+                raise TimeoutError("Timeout waiting for new notifications")
+            else:
+                driver_conn.poll()
+                while driver_conn.notifies:
+                    notify = driver_conn.notifies.pop(0)
+                    yield Notification(
+                        pid=notify.pid,
+                        channel=notify.channel,
+                        payload=notify.payload,
+                    )
