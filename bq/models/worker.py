@@ -60,5 +60,6 @@ class Worker(Base):
         items = [
             ("id", self.id),
             ("name", self.name),
+            ("state", self.state),
         ]
         return f"<{self.__class__.__name__} {make_repr_attrs(items)}>"
