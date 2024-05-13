@@ -33,6 +33,7 @@ class Task(Base):
         nullable=False,
         default=TaskState.PENDING,
         server_default=TaskState.PENDING.value,
+        index=True,
     )
     # channel for workers and job creator to listen/notify
     channel = Column(String, nullable=False, index=True)
