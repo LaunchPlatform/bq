@@ -11,7 +11,7 @@ def dispatch_service() -> DispatchService:
     return DispatchService()
 
 
-def test_fetch_empty(
+def test_dispatch_empty(
     db: Session, dispatch_service: DispatchService, worker: models.Worker
 ):
     assert not list(
@@ -19,7 +19,7 @@ def test_fetch_empty(
     )
 
 
-def test_fetch(
+def test_dispatch(
     db: Session,
     dispatch_service: DispatchService,
     worker: models.Worker,
@@ -39,7 +39,7 @@ def test_fetch(
     )
 
 
-def test_fetch_many(
+def test_dispatch_many(
     db: Session,
     dispatch_service: DispatchService,
     worker: models.Worker,
