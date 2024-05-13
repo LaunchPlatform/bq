@@ -27,7 +27,7 @@ class WorkerFactory(BaseFactory):
 class TaskFactory(BaseFactory):
     state = models.TaskState.PENDING
     channel = Faker("slug")
-    worker = SubFactory(WorkerFactory)
+    worker = None
     created_at = func.now()
     args = []
     kwargs = {}

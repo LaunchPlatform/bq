@@ -1,11 +1,11 @@
+from sqlalchemy.orm import Query
+
 from .. import models
 from ..db.session import Session
 
 
 class DispatchService:
-    def fetch(
-        self, channel: str, worker: models.Worker, limit: int = 1
-    ) -> list[models.Task]:
+    def fetch(self, channel: str, worker: models.Worker, limit: int = 1) -> Query:
         session = Session()
         task_query = (
             session.query(models.Task.id)
