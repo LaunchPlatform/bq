@@ -24,6 +24,7 @@ def test_fetch(
 ):
     assert task.state == models.TaskState.PENDING
     tasks = list(dispatch_service.fetch(task.channel, worker=worker))
+    db.expire_all()
     assert len(tasks) == 1
     returned_task = tasks[0]
     assert returned_task.state == models.TaskState.PROCESSING
