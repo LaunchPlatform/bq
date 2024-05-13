@@ -1,4 +1,5 @@
 import typing
+import uuid
 
 from sqlalchemy.orm import Query
 
@@ -21,6 +22,17 @@ class DispatchService:
             .with_for_update(skip_locked=True)
         )
 
+    def make_update_query(self, task_query: typing.Any, worker_id: uuid.UUID):
+        return (
+            models.Task.__table__.update()
+            .where(models.Task.id.in_(task_query))
+            .values(
+                state=models.TaskState.PROCESSING,
+                worker_id=worker_id,
+            )
+            .returning(models.Task.id)
+        )
+
     def dispatch(
         self, predicate: typing.Any, worker: models.Worker, limit: int = 1
     ) -> Query:
@@ -30,13 +42,7 @@ class DispatchService:
         task_ids = [
             item[0]
             for item in session.execute(
-                models.Task.__table__.update()
-                .where(models.Task.id.in_(task_subquery))
-                .values(
-                    state=models.TaskState.PROCESSING,
-                    worker_id=worker.id,
-                )
-                .returning(models.Task.id)
+                self.make_update_query(task_subquery, worker_id=worker.id)
             )
         ]
         # TODO: ideally returning with (models.Task) should return the whole model, but SQLAlchemy is returning
