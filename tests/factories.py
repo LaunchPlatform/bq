@@ -1,5 +1,4 @@
 from factory import Faker
-from factory import SubFactory
 from factory.alchemy import SQLAlchemyModelFactory
 from sqlalchemy import func
 

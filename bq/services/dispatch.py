@@ -11,11 +11,11 @@ class DispatchService:
     def __init__(self, session_cls: typing.Type[Session] = Session):
         self.session_cls = session_cls
 
-    def make_task_query(self, predicate: typing.Any, limit: int = 1) -> Query:
+    def make_task_query(self, channels: typing.Sequence[str], limit: int = 1) -> Query:
         session = self.session_cls()
         return (
             session.query(models.Task.id)
-            .filter(predicate)
+            .filter(models.Task.channel.in_(channels))
             .filter(models.Task.state == models.TaskState.PENDING)
             .order_by(models.Task.created_at)
             .limit(limit)
@@ -34,10 +34,10 @@ class DispatchService:
         )
 
     def dispatch(
-        self, predicate: typing.Any, worker: models.Worker, limit: int = 1
+        self, channels: typing.Sequence[str], worker: models.Worker, limit: int = 1
     ) -> Query:
         session = self.session_cls
-        task_query = self.make_task_query(predicate, limit=limit)
+        task_query = self.make_task_query(channels, limit=limit)
         task_subquery = task_query.subquery("locked_tasks")
         task_ids = [
             item[0]
