@@ -21,7 +21,7 @@ class DispatchService:
             .where(models.Task.id.in_(task_subquery))
             .values(
                 state=models.TaskState.PROCESSING,
-                worker=worker,
+                worker_id=worker.id,
             )
             .returning(models.Task)
         )

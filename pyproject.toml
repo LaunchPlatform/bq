@@ -11,6 +11,10 @@ python = "^3.11"
 sqlalchemy = "^2.0.30"
 
 
+[tool.poetry.group.dev.dependencies]
+psycopg2-binary = "^2.9.9"
+pytest-factoryboy = "^2.7.0"
+
 [build-system]
 requires = ["poetry-core"]
 build-backend = "poetry.core.masonry.api"
