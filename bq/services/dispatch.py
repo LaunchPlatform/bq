@@ -36,7 +36,7 @@ class DispatchService:
     def dispatch(
         self, channels: typing.Sequence[str], worker: models.Worker, limit: int = 1
     ) -> Query:
-        session = self.session_cls
+        session = self.session_cls()
         task_query = self.make_task_query(channels, limit=limit)
         task_subquery = task_query.subquery("locked_tasks")
         task_ids = [
@@ -48,3 +48,11 @@ class DispatchService:
         # TODO: ideally returning with (models.Task) should return the whole model, but SQLAlchemy is returning
         #       it columns in rows. We can save a round trip if we can find out how to solve this
         return session.query(models.Task).filter(models.Task.id.in_(task_ids))
+
+    def listen(self, channels: typing.Sequence[str]):
+        session = self.session_cls()
+        conn = session.connection()
+        for channel in channels:
+            quoted_channel = conn.dialect.identifier_preparer.quote_identifier(channel)
+            conn.exec_driver_sql(f"LISTEN {quoted_channel}")
+        session.commit()
