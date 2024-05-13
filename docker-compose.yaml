@@ -1,0 +1,21 @@
+version: '3'
+services:
+  psql:
+    environment:
+      POSTGRES_HOST_AUTH_METHOD: trust
+      POSTGRES_PASSWORD: ""
+      POSTGRES_USER: "bq"
+      POSTGRES_DB: "bq"
+    image: "postgres:13.1"
+    ports:
+    - "5432:5432"
+    volumes:
+    - psqldata:/var/lib/postgresql/data
+    - ./tests/.create-test-db.sql:/docker-entrypoint-initdb.d/create-test-db.sql
+    healthcheck:
+      test: ["CMD", "pg_isready", "-d", "bq"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+volumes:
+  psqldata:
