@@ -46,6 +46,8 @@ def test_fetch_many(
     for _ in range(4):
         task_factory(channel=channel)
 
+    task_factory(channel=channel, state=models.TaskState.DONE)
+
     tasks = list(dispatch_service.fetch(channel, worker=worker, limit=3))
     db.expire_all()
     assert len(tasks) == 3
