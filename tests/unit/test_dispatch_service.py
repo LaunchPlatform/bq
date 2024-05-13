@@ -69,3 +69,7 @@ def test_dispatch_many(
 
     tasks = list(dispatch_service.dispatch(["my_channel"], worker=worker))
     assert len(tasks) == 1
+
+
+def test_listen_value_quote(db: Session, dispatch_service: DispatchService):
+    dispatch_service.listen(["a", "中文", "!@#$%^&*(()-_"])
