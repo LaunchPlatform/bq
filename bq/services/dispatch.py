@@ -64,21 +64,38 @@ class DispatchService:
         for channel in channels:
             quoted_channel = conn.dialect.identifier_preparer.quote_identifier(channel)
             conn.exec_driver_sql(f"LISTEN {quoted_channel}")
-        session.commit()
 
     def poll(self, timeout: int = 5) -> typing.Generator[Notification, None, None]:
         session = self.session_cls()
         conn = session.connection()
         driver_conn = conn.connection.driver_connection
-        while True:
+
+        def pop_notifies():
+            while driver_conn.notifies:
+                notify = driver_conn.notifies.pop(0)
+                yield Notification(
+                    pid=notify.pid,
+                    channel=notify.channel,
+                    payload=notify.payload,
+                )
+
+        # poll first to see if there's anything already
+        driver_conn.poll()
+        if driver_conn.notifies:
+            yield from pop_notifies()
+        else:
+            # okay, nothing, let's select and wait for new stuff
             if select.select([driver_conn], [], [], timeout) == ([], [], []):
+                # nope, nothing, times out
                 raise TimeoutError("Timeout waiting for new notifications")
             else:
+                # yep, we got something
                 driver_conn.poll()
-                while driver_conn.notifies:
-                    notify = driver_conn.notifies.pop(0)
-                    yield Notification(
-                        pid=notify.pid,
-                        channel=notify.channel,
-                        payload=notify.payload,
-                    )
+                yield from pop_notifies()
+
+    def notify(self, channels: typing.Sequence[str]):
+        session = self.session_cls()
+        conn = session.connection()
+        for channel in channels:
+            quoted_channel = conn.dialect.identifier_preparer.quote_identifier(channel)
+            conn.exec_driver_sql(f"NOTIFY {quoted_channel}")

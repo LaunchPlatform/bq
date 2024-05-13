@@ -73,3 +73,15 @@ def test_dispatch_many(
 
 def test_listen_value_quote(db: Session, dispatch_service: DispatchService):
     dispatch_service.listen(["a", "中文", "!@#$%^&*(()-_"])
+    db.commit()
+
+
+def test_poll(db: Session, dispatch_service: DispatchService):
+    dispatch_service.listen(["a", "b", "c"])
+    db.commit()
+    with pytest.raises(TimeoutError):
+        list(dispatch_service.poll(timeout=1))
+    dispatch_service.notify(["a", "c"])
+    db.commit()
+    notifications = list(dispatch_service.poll(timeout=1))
+    assert frozenset([n.channel for n in notifications]) == frozenset(["a", "c"])
