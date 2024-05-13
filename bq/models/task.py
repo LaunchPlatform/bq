@@ -5,6 +5,7 @@ from sqlalchemy import DateTime
 from sqlalchemy import Enum
 from sqlalchemy import func
 from sqlalchemy import String
+from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.dialects.postgresql import UUID
 
 from ..db.base import Base
@@ -26,10 +27,19 @@ class Task(Base):
     id = Column(
         UUID(as_uuid=True), primary_key=True, server_default=func.gen_random_uuid()
     )
+    # current state of the task
+    state = Column(
+        Enum(TaskState),
+        nullable=False,
+        default=TaskState.PENDING,
+        server_default=TaskState.PENDING.value,
+    )
     # channel for workers and job creator to listen/notify
     channel = Column(String, nullable=False, index=True)
-    # current state of the task
-    state = Column(Enum(TaskState), nullable=False)
+    # arguments
+    args = Column(JSONB, nullable=True)
+    # keyword arguments
+    kwargs = Column(JSONB, nullable=True)
     # name of the processing worker
     worker = Column(String, nullable=True)
     # created datetime of the task
@@ -42,6 +52,8 @@ class Task(Base):
     def __repr__(self) -> str:
         items = [
             ("id", self.id),
-            # TODO: add more stuff
+            ("state", self.state),
+            ("channel", self.channel),
+            ("worker", self.worker),
         ]
         return f"<{self.__class__.__name__} {make_repr_attrs(items)}>"
