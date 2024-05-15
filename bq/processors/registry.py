@@ -14,12 +14,14 @@ BQ_PROCESSOR_CATEGORY = "bq_processor"
 
 @dataclasses.dataclass(frozen=True)
 class Processor:
+    channel: str
     module: str
     name: str
-    channel: str
     func: typing.Callable
     # should we auto complete the task or not
     auto_complete: bool = True
+    # should we auto rollback the transaction when encounter unhandled exception
+    auto_rollback_on_exc: bool = True
 
 
 def process_task(task: models.Task, processor: Processor):
@@ -40,7 +42,9 @@ def process_task(task: models.Task, processor: Processor):
             db.commit()
         return result
     except Exception:
-        logger.error("Unprocessed error for task %s", task.id, exc_info=True)
+        logger.error("Unhandled exception for task %s", task.id, exc_info=True)
+        if processor.auto_rollback_on_exc:
+            db.rollback()
         # TODO: add error event
         task.state = models.TaskState.FAILED
         db.add(task)
@@ -75,7 +79,9 @@ class Registry:
         return process_task(task, processor)
 
 
-def processor(channel: str, auto_complete: bool = True) -> typing.Callable:
+def processor(
+    channel: str, auto_complete: bool = True, auto_rollback_on_exc: bool = True
+) -> typing.Callable:
     def decorator(wrapped: typing.Callable):
         def callback(scanner: venusian.Scanner, name: str, ob: typing.Callable):
             processor = Processor(
@@ -84,6 +90,7 @@ def processor(channel: str, auto_complete: bool = True) -> typing.Callable:
                 channel=channel,
                 func=ob,
                 auto_complete=auto_complete,
+                auto_rollback_on_exc=auto_rollback_on_exc,
             )
             scanner.registry.add(processor)
 
