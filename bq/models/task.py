@@ -45,6 +45,10 @@ class Task(Base):
     )
     # channel for workers and job creator to listen/notify
     channel = Column(String, nullable=False, index=True)
+    # module of the processor function
+    module = Column(String, nullable=False)
+    # func name of the processor func
+    func = Column(String, nullable=False)
     # arguments
     args = Column(JSONB, nullable=True)
     # keyword arguments

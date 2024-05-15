@@ -9,6 +9,8 @@ readme = "README.md"
 [tool.poetry.dependencies]
 python = "^3.11"
 sqlalchemy = "^2.0.30"
+venusian = "^3.1.0"
+click = "^8.1.7"
 
 
 [tool.poetry.group.dev.dependencies]
