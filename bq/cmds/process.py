@@ -50,8 +50,6 @@ def main(
     )
     Session.bind = engine
 
-    logger.info("Processing tasks in channels = %s", channels)
-
     logger.info("Scanning packages %s", packages)
     pkgs = list(map(importlib.import_module, packages))
     registry = collect(pkgs)
@@ -64,13 +62,16 @@ def main(
                 )
 
     dispatch_service = DispatchService()
+
     db = Session()
     worker = models.Worker(name=platform.node())
     db.add(worker)
     dispatch_service.listen(channels)
     db.flush()
-    logger.info("Created worker %s, name=%s", worker.id, worker.name)
     db.commit()
+
+    logger.info("Created worker %s, name=%s", worker.id, worker.name)
+    logger.info("Processing tasks in channels = %s ...", channels)
 
     while True:
         for task in dispatch_service.dispatch(
@@ -83,6 +84,7 @@ def main(
                 task.module,
                 task.func_name,
             )
+            # TODO: support processor pool and other approaches to dispatch the workload
             registry.process(task)
         try:
             for notification in dispatch_service.poll(timeout=pull_timeout):
