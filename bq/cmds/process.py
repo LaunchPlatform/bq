@@ -1,3 +1,4 @@
+import importlib
 import logging
 import platform
 
@@ -14,6 +15,14 @@ from ..services.dispatch import DispatchService
 @click.command()
 @click.argument("channels", nargs=-1)
 @click.option(
+    "-p",
+    "--packages",
+    type=str,
+    help="Packages to scan for processor functions",
+    required=True,
+    multiple=True,
+)
+@click.option(
     "-l",
     "--batch-size",
     type=int,
@@ -27,7 +36,8 @@ from ..services.dispatch import DispatchService
     help="How long we should poll before timeout in seconds",
 )
 def main(
-    channels: tuple[str],
+    channels: tuple[str, ...],
+    packages: tuple[str, ...],
     batch_size: int,
     pull_timeout: int,
 ):
@@ -42,13 +52,18 @@ def main(
 
     logger.info("Processing tasks in channels = %s", channels)
 
-    dispatch_service = DispatchService()
-    # FIXME:
-    pkgs = []
+    logger.info("Scanning packages %s", packages)
+    pkgs = list(map(importlib.import_module, packages))
     registry = collect(pkgs)
+    for channel, module_processors in registry.processors.items():
+        logger.info("Collected processors with channel %r", channel)
+        for module, func_processors in module_processors.items():
+            for processor in func_processors.values():
+                logger.info(
+                    "  Processor module %r, processor %r", module, processor.name
+                )
 
-    # TODO: list collected processors
-
+    dispatch_service = DispatchService()
     db = Session()
     worker = models.Worker(name=platform.node())
     db.add(worker)
@@ -58,12 +73,6 @@ def main(
     db.commit()
 
     while True:
-        try:
-            for _ in dispatch_service.poll(timeout=pull_timeout):
-                pass
-        except TimeoutError:
-            logger.debug("Poll timeout, try again")
-            continue
         for task in dispatch_service.dispatch(
             channels, worker=worker, limit=batch_size
         ):
@@ -75,6 +84,12 @@ def main(
                 task.func_name,
             )
             registry.process(task)
+        try:
+            for notification in dispatch_service.poll(timeout=pull_timeout):
+                logger.debug("Receive notification %s", notification)
+        except TimeoutError:
+            logger.debug("Poll timeout, try again")
+            continue
 
 
 if __name__ == "__main__":
