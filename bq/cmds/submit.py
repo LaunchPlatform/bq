@@ -11,18 +11,8 @@ from ..services.dispatch import DispatchService
 
 @click.command()
 @click.argument("channel", nargs=1)
-@click.option(
-    "-m",
-    "--module",
-    type=str,
-    help='Name of module, such as "mymodule.tasks.payments"',
-)
-@click.option(
-    "-f",
-    "--func",
-    type=str,
-    help='Name of function, such as "process_payment"',
-)
+@click.argument("module", nargs=1)
+@click.argument("func", nargs=1)
 def main(
     channel: str,
     module: str,

@@ -1,4 +1,5 @@
 import logging
+import platform
 
 import click
 from sqlalchemy.engine import create_engine
@@ -46,10 +47,14 @@ def main(
     pkgs = []
     registry = collect(pkgs)
 
-    worker = models.Worker()
+    # TODO: list collected processors
 
     db = Session()
+    worker = models.Worker(name=platform.node())
+    db.add(worker)
     dispatch_service.listen(channels)
+    db.flush()
+    logger.info("Created worker %s, name=%s", worker.id, worker.name)
     db.commit()
 
     while True:

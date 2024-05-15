@@ -66,10 +66,10 @@ class Registry:
         db = object_session(task)
         if processor is None:
             self.logger.error(
-                "Cannot find processor for task %s with func=%s, module=%s",
+                "Cannot find processor for task %s with module=%s, func=%s",
                 task.id,
-                task.func_name,
                 task.module,
+                task.func_name,
             )
             # TODO: add error event
             task.state = models.TaskState.FAILED
