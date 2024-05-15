@@ -44,3 +44,37 @@ def test_process_task_kwargs(
     assert frozenset(process_task(task=task, processor=processor)) == frozenset(
         expected
     )
+
+
+@pytest.mark.parametrize("task__state", [models.TaskState.PROCESSING])
+@pytest.mark.parametrize(
+    "auto_complete, expected_state",
+    [
+        (True, models.TaskState.DONE),
+        (False, models.TaskState.PROCESSING),
+    ],
+)
+def test_process_task_auto_complete(
+    db: Session,
+    task: models.Task,
+    auto_complete: bool,
+    expected_state: models.TaskState,
+):
+    called = False
+
+    def func():
+        nonlocal called
+        called = True
+        return "result"
+
+    processor = Processor(
+        channel="mock-channel",
+        module="mock.module",
+        name="my_func",
+        func=func,
+        auto_complete=auto_complete,
+    )
+    assert process_task(task=task, processor=processor) == "result"
+    db.expire_all()
+    assert task.state == expected_state
+    assert called
