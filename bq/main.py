@@ -1,8 +1,11 @@
 import logging
 
 import click
+from sqlalchemy.engine import create_engine
+from sqlalchemy.pool import SingletonThreadPool
 
 from . import models
+from .db.session import Session
 from .processors.registry import collect
 from .services.dispatch import DispatchService
 
@@ -30,6 +33,12 @@ def main(
     logging.basicConfig(level=logging.INFO)
     logger = logging.getLogger(__name__)
 
+    # FIXME: the uri from opt
+    engine = create_engine(
+        "postgresql://bq:@localhost/bq_test", poolclass=SingletonThreadPool
+    )
+    Session.bind = engine
+
     dispatch_service = DispatchService()
     # FIXME:
     pkgs = []
@@ -48,6 +57,13 @@ def main(
         for task in dispatch_service.dispatch(
             channels, worker=worker, limit=batch_size
         ):
+            logger.info(
+                "Processing task %s, channel=%s, module=%s, func=%s",
+                task.id,
+                task.channel,
+                task.module,
+                task.func_name,
+            )
             registry.process(task)
 
 
