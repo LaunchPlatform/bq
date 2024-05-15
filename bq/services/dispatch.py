@@ -47,7 +47,7 @@ class DispatchService:
     ) -> Query:
         session = self.session_cls()
         task_query = self.make_task_query(channels, limit=limit)
-        task_subquery = task_query.subquery("locked_tasks")
+        task_subquery = task_query.scalar_subquery()
         task_ids = [
             item[0]
             for item in session.execute(

@@ -4,10 +4,10 @@ import click
 from sqlalchemy.engine import create_engine
 from sqlalchemy.pool import SingletonThreadPool
 
-from . import models
-from .db.session import Session
-from .processors.registry import collect
-from .services.dispatch import DispatchService
+from .. import models
+from ..db.session import Session
+from ..processors.registry import collect
+from ..services.dispatch import DispatchService
 
 
 @click.command()
@@ -26,7 +26,7 @@ from .services.dispatch import DispatchService
     help="How long we should poll before timeout in seconds",
 )
 def main(
-    channels: list[str],
+    channels: tuple[str],
     batch_size: int,
     pull_timeout: int,
 ):
@@ -38,6 +38,8 @@ def main(
         "postgresql://bq:@localhost/bq_test", poolclass=SingletonThreadPool
     )
     Session.bind = engine
+
+    logger.info("Processing tasks in channels = %s", channels)
 
     dispatch_service = DispatchService()
     # FIXME:
