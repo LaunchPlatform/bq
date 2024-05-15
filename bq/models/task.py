@@ -48,9 +48,7 @@ class Task(Base):
     # module of the processor function
     module = Column(String, nullable=False)
     # func name of the processor func
-    func = Column(String, nullable=False)
-    # arguments
-    args = Column(JSONB, nullable=True)
+    func_name = Column(String, nullable=False)
     # keyword arguments
     kwargs = Column(JSONB, nullable=True)
     # created datetime of the task
