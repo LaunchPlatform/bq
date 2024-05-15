@@ -48,11 +48,14 @@ def main(
 
     worker = models.Worker()
 
+    db = Session()
     dispatch_service.listen(channels)
+    db.commit()
 
     while True:
         try:
-            dispatch_service.poll(timeout=pull_timeout)
+            for _ in dispatch_service.poll(timeout=pull_timeout):
+                pass
         except TimeoutError:
             logger.debug("Poll timeout, try again")
             continue
