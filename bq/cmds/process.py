@@ -1,8 +1,12 @@
+import functools
 import importlib
 import logging
 import platform
+import threading
+import time
 
 import click
+from sqlalchemy import func
 from sqlalchemy.engine import create_engine
 from sqlalchemy.pool import SingletonThreadPool
 
@@ -10,6 +14,26 @@ from .. import models
 from ..db.session import Session
 from ..processors.registry import collect
 from ..services.dispatch import DispatchService
+
+
+def update_workers(
+    db: Session,
+    current_worker: models.Worker,
+    heartbeat_period: int,
+    heartbeat_timeout: int,
+):
+    logger = logging.getLogger(__name__)
+    logger.info(
+        "Updating worker %s with heartbeat_period=%s, heartbeat_timeout=%s",
+        current_worker.id,
+        heartbeat_period,
+        heartbeat_timeout,
+    )
+    while True:
+        time.sleep(heartbeat_period)
+        current_worker.last_heartbeat = func.now()
+        db.add(current_worker)
+        db.commit()
 
 
 @click.command()
@@ -35,11 +59,25 @@ from ..services.dispatch import DispatchService
     default=60,
     help="How long we should poll before timeout in seconds",
 )
+@click.option(
+    "--worker-heartbeat-period",
+    type=int,
+    default=30,
+    help="Interval of worker heartbeat update cycle in seconds",
+)
+@click.option(
+    "--worker-heartbeat-timeout",
+    type=int,
+    default=100,
+    help="Timeout of worker heartbeat in seconds",
+)
 def main(
     channels: tuple[str, ...],
     packages: tuple[str, ...],
     batch_size: int,
     pull_timeout: int,
+    worker_heartbeat_period: int,
+    worker_heartbeat_timeout: int,
 ):
     logging.basicConfig(level=logging.INFO)
     logger = logging.getLogger(__name__)
@@ -73,25 +111,49 @@ def main(
     logger.info("Created worker %s, name=%s", worker.id, worker.name)
     logger.info("Processing tasks in channels = %s ...", channels)
 
-    while True:
-        for task in dispatch_service.dispatch(
-            channels, worker=worker, limit=batch_size
-        ):
-            logger.info(
-                "Processing task %s, channel=%s, module=%s, func=%s",
-                task.id,
-                task.channel,
-                task.module,
-                task.func_name,
-            )
-            # TODO: support processor pool and other approaches to dispatch the workload
-            registry.process(task)
-        try:
-            for notification in dispatch_service.poll(timeout=pull_timeout):
-                logger.debug("Receive notification %s", notification)
-        except TimeoutError:
-            logger.debug("Poll timeout, try again")
-            continue
+    worker_update_thread = threading.Thread(
+        target=functools.partial(
+            update_workers,
+            db=db,
+            worker=worker,
+            heartbeat_period=worker_heartbeat_period,
+            heartbeat_timeout=worker_heartbeat_timeout,
+        ),
+        name="update_workers",
+    )
+    worker_update_thread.daemon = True
+    worker_update_thread.start()
+
+    try:
+        while True:
+            for task in dispatch_service.dispatch(
+                channels, worker=worker, limit=batch_size
+            ):
+                logger.info(
+                    "Processing task %s, channel=%s, module=%s, func=%s",
+                    task.id,
+                    task.channel,
+                    task.module,
+                    task.func_name,
+                )
+                # TODO: support processor pool and other approaches to dispatch the workload
+                registry.process(task)
+            try:
+                for notification in dispatch_service.poll(timeout=pull_timeout):
+                    logger.debug("Receive notification %s", notification)
+            except TimeoutError:
+                logger.debug("Poll timeout, try again")
+                continue
+    except (SystemExit, KeyboardInterrupt):
+        db.rollback()
+        logger.info("Shutting down ...")
+        worker_update_thread.join(5)
+
+    worker.state = models.WorkerState.SHUTDOWN
+    db.add(worker)
+    db.commit()
+
+    logger.info("Shutdown gracefully")
 
 
 if __name__ == "__main__":
