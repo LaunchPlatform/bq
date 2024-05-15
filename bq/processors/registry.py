@@ -100,11 +100,10 @@ def processor(
     return decorator
 
 
-def collect(
-    packages: list[typing.Any],
-) -> dict[str, dict]:
-    registry = Registry()
+def collect(packages: list[typing.Any], registry: Registry | None = None) -> Registry:
+    if registry is None:
+        registry = Registry()
     scanner = venusian.Scanner(registry=registry)
     for package in packages:
         scanner.scan(package, categories=(BQ_PROCESSOR_CATEGORY,))
-    return registry.processors
+    return registry
