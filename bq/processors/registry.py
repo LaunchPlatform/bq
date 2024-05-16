@@ -25,17 +25,18 @@ class Processor:
 
 
 class ProcessorHelper:
-    def __init__(self, func: typing.Callable, task_cls: typing.Type = models.Task):
-        self._func = func
+    def __init__(self, processor: Processor, task_cls: typing.Type = models.Task):
+        self._processor = processor
         self._task_cls = task_cls
 
     def __call__(self, *args, **kwargs):
-        return self._func(*args, **kwargs)
+        return self._processor.func(*args, **kwargs)
 
     def run(self, **kwargs) -> models.Task:
         return self._task_cls(
-            module=self._func.__module__,
-            func_name=self._func.__name__,
+            channel=self._processor.channel,
+            module=self._processor.module,
+            func_name=self._processor.name,
             kwargs=kwargs,
         )
 
@@ -102,17 +103,19 @@ def processor(
     task_cls: typing.Type = models.Task,
 ) -> typing.Callable:
     def decorator(wrapped: typing.Callable):
-        helper_obj = ProcessorHelper(wrapped, task_cls=task_cls)
+        processor = Processor(
+            module=wrapped.__module__,
+            name=wrapped.__name__,
+            channel=channel,
+            func=wrapped,
+            auto_complete=auto_complete,
+            auto_rollback_on_exc=auto_rollback_on_exc,
+        )
+        helper_obj = ProcessorHelper(processor, task_cls=task_cls)
 
         def callback(scanner: venusian.Scanner, name: str, ob: typing.Callable):
-            processor = Processor(
-                module=wrapped.__module__,
-                name=name,
-                channel=channel,
-                func=wrapped,
-                auto_complete=auto_complete,
-                auto_rollback_on_exc=auto_rollback_on_exc,
-            )
+            if processor.name != name:
+                raise ValueError("Name is not the same")
             scanner.registry.add(processor)
 
         venusian.attach(helper_obj, callback, category=BQ_PROCESSOR_CATEGORY)

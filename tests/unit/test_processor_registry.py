@@ -168,3 +168,5 @@ def test_processor_helper(registry: Registry, processor_module):
     assert isinstance(task, models.Task)
     assert task.module == processor_module
     assert task.func_name == "processor0"
+    assert task.channel == "mock-channel"
+    assert task.kwargs == dict(k0="v0")
