@@ -64,8 +64,8 @@ def test_registry_process(
     "func, expected",
     [
         (lambda: [], []),
-        (lambda task: {"task"}, ["task"]),
-        (lambda task, db: {"task", "db"}, ["task", "db"]),
+        (lambda task: ["task"], ["task"]),
+        (lambda task, db: ["task", "db"], ["task", "db"]),
     ],
 )
 def test_process_task_kwargs(
