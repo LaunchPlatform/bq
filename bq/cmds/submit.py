@@ -6,7 +6,6 @@ from sqlalchemy.pool import SingletonThreadPool
 
 from .. import models
 from ..db.session import Session
-from ..services.dispatch import DispatchService
 
 
 @click.command()
@@ -27,14 +26,12 @@ def main(
     )
     Session.configure(bind=engine)
     db = Session()
-    dispatch_service = DispatchService(db)
 
     logger.info(
         "Submit task with channel=%s, module=%s, func=%s", channel, module, func
     )
     task = models.Task(channel=channel, module=module, func_name=func, kwargs={})
     db.add(task)
-    dispatch_service.notify([channel])
     db.commit()
     logger.info("Done, submit task %s", task.id)
 
