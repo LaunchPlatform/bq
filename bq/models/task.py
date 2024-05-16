@@ -75,19 +75,35 @@ class Task(Base):
         return f"<{self.__class__.__name__} {make_repr_attrs(items)}>"
 
 
+def notify_if_needed(connection: Connection, task: Task):
+    session = inspect(task).session
+    transaction = session.get_transaction()
+    if transaction is not None:
+        key = "_notified_channels"
+        if hasattr(transaction, key):
+            notified_channels = getattr(transaction, key)
+        else:
+            notified_channels = set()
+            setattr(transaction, key, notified_channels)
+
+        if task.channel in notified_channels:
+            # already notified, skip
+            return
+        notified_channels.add(task.channel)
+
+    quoted_channel = connection.dialect.identifier_preparer.quote_identifier(
+        task.channel
+    )
+    connection.exec_driver_sql(f"NOTIFY {quoted_channel}")
+
+
 @event.listens_for(Task, "after_insert")
 def task_insert_notify(mapper: Mapper, connection: Connection, target: Task):
     from .. import models
 
     if target.state != models.TaskState.PENDING:
         return
-    quoted_channel = connection.dialect.identifier_preparer.quote_identifier(
-        target.channel
-    )
-    # TODO: we don't need to notify the same channel many times if it has already been sent before.
-    #       to optimize, we should check session and only send out notify in the same transaction
-    #       when the channel was not notified yet
-    connection.exec_driver_sql(f"NOTIFY {quoted_channel}")
+    notify_if_needed(connection, target)
 
 
 @event.listens_for(Task, "after_update")
@@ -99,10 +115,4 @@ def task_update_notify(mapper: Mapper, connection: Connection, target: Task):
         return
     if target.state != models.TaskState.PENDING:
         return
-    quoted_channel = connection.dialect.identifier_preparer.quote_identifier(
-        target.channel
-    )
-    # TODO: we don't need to notify the same channel many times if it has already been sent before.
-    #       to optimize, we should check session and only send out notify in the same transaction
-    #       when the channel was not notified yet
-    connection.exec_driver_sql(f"NOTIFY {quoted_channel}")
+    notify_if_needed(connection, target)
