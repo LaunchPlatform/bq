@@ -102,7 +102,7 @@ def processor(
     task_cls: typing.Type = models.Task,
 ) -> typing.Callable:
     def decorator(wrapped: typing.Callable):
-        wrapped_obj = ProcessorHelper(wrapped, task_cls=task_cls)
+        helper_obj = ProcessorHelper(wrapped, task_cls=task_cls)
 
         def callback(scanner: venusian.Scanner, name: str, ob: typing.Callable):
             processor = Processor(
@@ -115,8 +115,8 @@ def processor(
             )
             scanner.registry.add(processor)
 
-        venusian.attach(wrapped_obj, callback, category=BQ_PROCESSOR_CATEGORY)
-        return wrapped_obj
+        venusian.attach(helper_obj, callback, category=BQ_PROCESSOR_CATEGORY)
+        return helper_obj
 
     return decorator
 

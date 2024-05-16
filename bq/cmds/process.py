@@ -8,11 +8,14 @@ import typing
 import uuid
 
 import click
+from dependency_injector.wiring import inject
+from dependency_injector.wiring import Provide
+from sqlalchemy import Engine
 from sqlalchemy import func
-from sqlalchemy.engine import create_engine
-from sqlalchemy.pool import SingletonThreadPool
 
 from .. import models
+from ..config import Config
+from ..container import Container
 from ..db.session import Session
 from ..processors.registry import collect
 from ..services.dispatch import DispatchService
@@ -63,59 +66,22 @@ def update_workers(
 
 @click.command()
 @click.argument("channels", nargs=-1)
-@click.option(
-    "-p",
-    "--packages",
-    type=str,
-    help="Packages to scan for processor functions",
-    required=True,
-    multiple=True,
-)
-@click.option(
-    "-l",
-    "--batch-size",
-    type=int,
-    default=1,
-    help="Size of tasks batch to fetch each time from the database",
-)
-@click.option(
-    "--pull-timeout",
-    type=int,
-    default=60,
-    help="How long we should poll before timeout in seconds",
-)
-@click.option(
-    "--worker-heartbeat-period",
-    type=int,
-    default=30,
-    help="Interval of worker heartbeat update cycle in seconds",
-)
-@click.option(
-    "--worker-heartbeat-timeout",
-    type=int,
-    default=100,
-    help="Timeout of worker heartbeat in seconds",
-)
+@inject
 def main(
     channels: tuple[str, ...],
-    packages: tuple[str, ...],
-    batch_size: int,
-    pull_timeout: int,
-    worker_heartbeat_period: int,
-    worker_heartbeat_timeout: int,
+    config: Config = Provide[Container.config],
+    engine: Engine = Provide[Container.db_engine],
 ):
     logging.basicConfig(level=logging.INFO)
     logger = logging.getLogger(__name__)
 
-    # FIXME: the uri from opt
-    engine = create_engine(
-        "postgresql://bq:@localhost/bq_test",
-        poolclass=SingletonThreadPool,
-    )
+    if not channels:
+        channels = ["default"]
+
     Session.configure(bind=engine)
 
-    logger.info("Scanning packages %s", packages)
-    pkgs = list(map(importlib.import_module, packages))
+    logger.info("Scanning packages %s", config.PROCESSOR_PACKAGES)
+    pkgs = list(map(importlib.import_module, config.PROCESSOR_PACKAGES))
     registry = collect(pkgs)
     for channel, module_processors in registry.processors.items():
         logger.info("Collected processors with channel %r", channel)
@@ -141,8 +107,8 @@ def main(
             update_workers,
             make_session=Session,
             worker_id=worker.id,
-            heartbeat_period=worker_heartbeat_period,
-            heartbeat_timeout=worker_heartbeat_timeout,
+            heartbeat_period=config.WORKER_HEARTBEAT_PERIOD,
+            heartbeat_timeout=config.WORKER_HEARTBEAT_TIMEOUT,
         ),
         name="update_workers",
     )
@@ -152,7 +118,9 @@ def main(
     try:
         while True:
             for task in dispatch_service.dispatch(
-                channels, worker=worker, limit=batch_size
+                channels,
+                worker=worker,
+                limit=config.BATCH_SIZE,
             ):
                 logger.info(
                     "Processing task %s, channel=%s, module=%s, func=%s",
@@ -168,7 +136,7 @@ def main(
             # polling
             db.close()
             try:
-                for notification in dispatch_service.poll(timeout=pull_timeout):
+                for notification in dispatch_service.poll(timeout=config.POLL_TIMEOUT):
                     logger.debug("Receive notification %s", notification)
             except TimeoutError:
                 logger.debug("Poll timeout, try again")
@@ -189,4 +157,6 @@ def main(
 
 
 if __name__ == "__main__":
+    container = Container()
+    container.wire(modules=[__name__])
     main()
