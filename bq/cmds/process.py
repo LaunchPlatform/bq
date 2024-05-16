@@ -12,23 +12,23 @@ from dependency_injector.wiring import inject
 from dependency_injector.wiring import Provide
 from sqlalchemy import Engine
 from sqlalchemy import func
+from sqlalchemy.orm import Session as DBSession
 
 from .. import models
 from ..config import Config
 from ..container import Container
-from ..db.session import Session
 from ..processors.registry import collect
 from ..services.dispatch import DispatchService
 from ..services.worker import WorkerService
 
 
 def update_workers(
-    make_session: typing.Callable[[], Session],
+    make_session: typing.Callable[[], DBSession],
     worker_id: uuid.UUID,
     heartbeat_period: int,
     heartbeat_timeout: int,
 ):
-    db: Session = make_session()
+    db: DBSession = make_session()
     worker_service = WorkerService(session=db)
     dispatch_service = DispatchService(session=db)
     current_worker = db.get(models.Worker, worker_id)
@@ -70,15 +70,15 @@ def update_workers(
 def main(
     channels: tuple[str, ...],
     config: Config = Provide[Container.config],
-    engine: Engine = Provide[Container.db_engine],
+    session_factory: typing.Callable = Provide[Container.session_factory],
+    db: DBSession = Provide[Container.session],
+    dispatch_service: DispatchService = Provide[Container.dispatch_service],
 ):
     logging.basicConfig(level=logging.INFO)
     logger = logging.getLogger(__name__)
 
     if not channels:
         channels = ["default"]
-
-    Session.configure(bind=engine)
 
     logger.info("Scanning packages %s", config.PROCESSOR_PACKAGES)
     pkgs = list(map(importlib.import_module, config.PROCESSOR_PACKAGES))
@@ -91,8 +91,6 @@ def main(
                     "  Processor module %r, processor %r", module, processor.name
                 )
 
-    db = Session()
-    dispatch_service = DispatchService(session=db)
     worker_service = WorkerService(session=db)
     worker = models.Worker(name=platform.node(), channels=channels)
     db.add(worker)
@@ -105,7 +103,7 @@ def main(
     worker_update_thread = threading.Thread(
         target=functools.partial(
             update_workers,
-            make_session=Session,
+            make_session=session_factory,
             worker_id=worker.id,
             heartbeat_period=config.WORKER_HEARTBEAT_PERIOD,
             heartbeat_timeout=config.WORKER_HEARTBEAT_TIMEOUT,
