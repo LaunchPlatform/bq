@@ -65,13 +65,6 @@ class WorkerService:
             models.Worker.id.in_(worker_ids)
         )
 
-    def update_dead_tasks(self, worker_query: typing.Any) -> frozenset[str]:
+    def reschedule_dead_tasks(self, worker_query: typing.Any) -> frozenset[str]:
         update_dead_task_query = self.make_update_tasks_query(worker_query=worker_query)
         self.session.execute(update_dead_task_query)
-        workers = self.session.query(models.Worker).filter(
-            models.Worker.id.in_(worker_query)
-        )
-        channels = set()
-        for worker in workers:
-            channels.union(frozenset(worker.channels))
-        return frozenset(channels)

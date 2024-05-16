@@ -38,16 +38,17 @@ def update_workers(
     )
     while True:
         dead_workers = worker_service.fetch_dead_workers(timeout=heartbeat_timeout)
-        channels = worker_service.reschedule_dead_tasks(
+        worker_service.reschedule_dead_tasks(
             dead_workers.with_entities(models.Worker.id)
         )
-        dispatch_service.notify(channels)
         for dead_worker in dead_workers:
             logger.info(
-                "Found dead worker %s (name=%s), reschedule dead tasks",
+                "Found dead worker %s (name=%s), reschedule dead tasks in channels %s",
                 dead_worker.id,
                 dead_worker.name,
+                dead_worker.channels,
             )
+            dispatch_service.notify(dead_worker.channels)
 
         time.sleep(heartbeat_period)
         # TODO: fetch dead workers and clear their processing tasks
@@ -174,7 +175,8 @@ def main(
 
     worker.state = models.WorkerState.SHUTDOWN
     db.add(worker)
-    dispatch_service.notify(worker_service.reschedule_dead_tasks([worker.id]))
+    worker_service.reschedule_dead_tasks([worker.id])
+    dispatch_service.notify(channels)
     db.commit()
 
     logger.info("Shutdown gracefully")
