@@ -5,7 +5,7 @@ from dependency_injector import containers
 from dependency_injector import providers
 from sqlalchemy import create_engine
 from sqlalchemy import Engine
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session as DBSession
 from sqlalchemy.pool import SingletonThreadPool
 
 from .config import Config
@@ -21,11 +21,11 @@ def make_session_factory(engine: Engine) -> typing.Callable:
     return functools.partial(SessionMaker, bind=engine)
 
 
-def make_session(factory: typing.Callable) -> Session:
+def make_session(factory: typing.Callable) -> DBSession:
     return factory()
 
 
-def make_dispatch_service(session: Session) -> DispatchService:
+def make_dispatch_service(session: DBSession) -> DispatchService:
     return DispatchService(session)
 
 
@@ -38,7 +38,7 @@ class Container(containers.DeclarativeContainer):
         make_session_factory, engine=db_engine
     )
 
-    session: Session = providers.Singleton(make_session, factory=session_factory)
+    session: DBSession = providers.Singleton(make_session, factory=session_factory)
 
     dispatch_service: DispatchService = providers.Singleton(
         make_dispatch_service, session=session

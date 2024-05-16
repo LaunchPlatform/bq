@@ -9,7 +9,7 @@ from pydantic_settings import SettingsConfigDict
 
 class Config(BaseSettings):
     # Packages to scan for processor functions
-    PROCESSOR_PACKAGES: list[str]
+    PROCESSOR_PACKAGES: list[str] = []
 
     # Size of tasks batch to fetch each time from the database
     BATCH_SIZE: int = 1

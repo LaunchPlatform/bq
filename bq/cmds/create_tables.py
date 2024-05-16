@@ -1,26 +1,25 @@
 import logging
 
 import click
-from sqlalchemy.engine import create_engine
-from sqlalchemy.pool import SingletonThreadPool
+from dependency_injector.wiring import inject
+from dependency_injector.wiring import Provide
+from sqlalchemy.engine import Engine
 
 from .. import models  # noqa
+from ..container import Container
 from ..db.base import Base
 
 
 @click.command()
-def main():
+@inject
+def main(engine: Engine = Provide[Container.db_engine]):
     logging.basicConfig(level=logging.INFO)
     logger = logging.getLogger(__name__)
-
-    # FIXME: the uri from opt
-    engine = create_engine(
-        "postgresql://bq:@localhost/bq_test", poolclass=SingletonThreadPool
-    )
-
     Base.metadata.create_all(bind=engine)
     logger.info("Done, tables created")
 
 
 if __name__ == "__main__":
+    container = Container()
+    container.wire(modules=[__name__])
     main()

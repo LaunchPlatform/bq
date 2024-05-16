@@ -1,10 +1,11 @@
 import logging
 
 import click
-from sqlalchemy.engine import create_engine
-from sqlalchemy.pool import SingletonThreadPool
+from dependency_injector.wiring import inject
+from dependency_injector.wiring import Provide
 
 from .. import models
+from ..container import Container
 from ..db.session import Session
 
 
@@ -12,20 +13,15 @@ from ..db.session import Session
 @click.argument("channel", nargs=1)
 @click.argument("module", nargs=1)
 @click.argument("func", nargs=1)
+@inject
 def main(
     channel: str,
     module: str,
     func: str,
+    db: Session = Provide[Container.session],
 ):
     logging.basicConfig(level=logging.INFO)
     logger = logging.getLogger(__name__)
-
-    # FIXME: the uri from opt
-    engine = create_engine(
-        "postgresql://bq:@localhost/bq_test", poolclass=SingletonThreadPool
-    )
-    Session.configure(bind=engine)
-    db = Session()
 
     logger.info(
         "Submit task with channel=%s, module=%s, func=%s", channel, module, func
@@ -37,4 +33,6 @@ def main(
 
 
 if __name__ == "__main__":
+    container = Container()
+    container.wire(modules=[__name__])
     main()

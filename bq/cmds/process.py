@@ -2,6 +2,7 @@ import functools
 import importlib
 import logging
 import platform
+import sys
 import threading
 import time
 import typing
@@ -10,7 +11,6 @@ import uuid
 import click
 from dependency_injector.wiring import inject
 from dependency_injector.wiring import Provide
-from sqlalchemy import Engine
 from sqlalchemy import func
 from sqlalchemy.orm import Session as DBSession
 
@@ -79,6 +79,10 @@ def main(
 
     if not channels:
         channels = ["default"]
+
+    if not config.PROCESSOR_PACKAGES:
+        logger.error("No PROCESSOR_PACKAGES provided")
+        sys.exit(-1)
 
     logger.info("Scanning packages %s", config.PROCESSOR_PACKAGES)
     pkgs = list(map(importlib.import_module, config.PROCESSOR_PACKAGES))
