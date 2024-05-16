@@ -26,11 +26,7 @@ def main(
     logger.info(
         "Submit task with channel=%s, module=%s, func=%s", channel, module, func
     )
-    # task = models.Task(channel=channel, module=module, func_name=func, kwargs={})
-    from tests.unit.fixtures.processors import processor1
-
-    task = processor1.run(kwarg0="hello")
-
+    task = models.Task(channel=channel, module=module, func_name=func, kwargs={})
     db.add(task)
     db.commit()
     logger.info("Done, submit task %s", task.id)
