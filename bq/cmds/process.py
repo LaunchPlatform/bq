@@ -73,6 +73,7 @@ def main(
     session_factory: typing.Callable = Provide[Container.session_factory],
     db: DBSession = Provide[Container.session],
     dispatch_service: DispatchService = Provide[Container.dispatch_service],
+    worker_service: WorkerService = Provide[Container.worker_service],
 ):
     logging.basicConfig(level=logging.INFO)
     logger = logging.getLogger(__name__)
@@ -95,7 +96,6 @@ def main(
                     "  Processor module %r, processor %r", module, processor.name
                 )
 
-    worker_service = WorkerService(session=db)
     worker = models.Worker(name=platform.node(), channels=channels)
     db.add(worker)
     dispatch_service.listen(channels)

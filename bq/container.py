@@ -11,6 +11,7 @@ from sqlalchemy.pool import SingletonThreadPool
 from .config import Config
 from .db.session import SessionMaker
 from .services.dispatch import DispatchService
+from .services.worker import WorkerService
 
 
 def make_db_engine(config: Config) -> Engine:
@@ -29,6 +30,10 @@ def make_dispatch_service(session: DBSession) -> DispatchService:
     return DispatchService(session)
 
 
+def make_worker_service(session: DBSession) -> WorkerService:
+    return WorkerService(session)
+
+
 class Container(containers.DeclarativeContainer):
     config = providers.Singleton(Config)
 
@@ -42,4 +47,8 @@ class Container(containers.DeclarativeContainer):
 
     dispatch_service: DispatchService = providers.Singleton(
         make_dispatch_service, session=session
+    )
+
+    worker_service: WorkerService = providers.Singleton(
+        make_worker_service, session=session
     )
