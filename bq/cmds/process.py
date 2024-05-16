@@ -35,6 +35,7 @@ def update_workers(
     )
     while True:
         time.sleep(heartbeat_period)
+        # TODO: fetch dead workers and clear their processing tasks
         current_worker.last_heartbeat = func.now()
         db.add(current_worker)
         db.commit()
@@ -157,6 +158,7 @@ def main(
 
     worker.state = models.WorkerState.SHUTDOWN
     db.add(worker)
+    # TODO: clean up attached pending tasks
     db.commit()
 
     logger.info("Shutdown gracefully")
