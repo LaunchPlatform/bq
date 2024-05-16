@@ -55,6 +55,7 @@ def process_task(task: models.Task, processor: Processor):
         if processor.auto_complete:
             logger.info("Task %s auto complete", task.id)
             task.state = models.TaskState.DONE
+            task.result = result
             db.add(task)
             db.commit()
         return result

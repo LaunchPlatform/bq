@@ -55,6 +55,8 @@ class Task(Base):
     func_name = Column(String, nullable=False)
     # keyword arguments
     kwargs = Column(JSONB, nullable=True)
+    # Result of the task
+    result = Column(JSONB, nullable=True)
     # created datetime of the task
     created_at = Column(
         DateTime(timezone=True), nullable=False, server_default=func.now()
@@ -82,6 +84,9 @@ def task_insert_notify(mapper: Mapper, connection: Connection, target: Task):
     quoted_channel = connection.dialect.identifier_preparer.quote_identifier(
         target.channel
     )
+    # TODO: we don't need to notify the same channel many times if it has already been sent before.
+    #       to optimize, we should check session and only send out notify in the same transaction
+    #       when the channel was not notified yet
     connection.exec_driver_sql(f"NOTIFY {quoted_channel}")
 
 
@@ -97,4 +102,7 @@ def task_update_notify(mapper: Mapper, connection: Connection, target: Task):
     quoted_channel = connection.dialect.identifier_preparer.quote_identifier(
         target.channel
     )
+    # TODO: we don't need to notify the same channel many times if it has already been sent before.
+    #       to optimize, we should check session and only send out notify in the same transaction
+    #       when the channel was not notified yet
     connection.exec_driver_sql(f"NOTIFY {quoted_channel}")
