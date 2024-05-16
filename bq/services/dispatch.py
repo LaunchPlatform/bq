@@ -42,14 +42,14 @@ class DispatchService:
         )
 
     def dispatch(
-        self, channels: typing.Sequence[str], worker: models.Worker, limit: int = 1
+        self, channels: typing.Sequence[str], worker_id: uuid.UUID, limit: int = 1
     ) -> Query:
         task_query = self.make_task_query(channels, limit=limit)
         task_subquery = task_query.scalar_subquery()
         task_ids = [
             item[0]
             for item in self.session.execute(
-                self.make_update_query(task_subquery, worker_id=worker.id)
+                self.make_update_query(task_subquery, worker_id=worker_id)
             )
         ]
         # TODO: ideally returning with (models.Task) should return the whole model, but SQLAlchemy is returning

@@ -117,11 +117,13 @@ def main(
     worker_update_thread.daemon = True
     worker_update_thread.start()
 
+    worker_id = worker.id
+
     try:
         while True:
             for task in dispatch_service.dispatch(
                 channels,
-                worker=worker,
+                worker_id=worker_id,
                 limit=config.BATCH_SIZE,
             ):
                 logger.info(

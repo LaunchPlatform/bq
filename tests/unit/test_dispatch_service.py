@@ -14,7 +14,7 @@ def dispatch_service(db: Session) -> DispatchService:
 def test_dispatch_empty(
     db: Session, dispatch_service: DispatchService, worker: models.Worker
 ):
-    assert not list(dispatch_service.dispatch(["test"], worker=worker))
+    assert not list(dispatch_service.dispatch(["test"], worker_id=worker.id))
 
 
 def test_dispatch(
@@ -24,13 +24,13 @@ def test_dispatch(
     task: models.Task,
 ):
     assert task.state == models.TaskState.PENDING
-    tasks = list(dispatch_service.dispatch([task.channel], worker=worker))
+    tasks = list(dispatch_service.dispatch([task.channel], worker_id=worker.id))
     db.expire_all()
     assert len(tasks) == 1
     returned_task = tasks[0]
     assert returned_task.state == models.TaskState.PROCESSING
     assert returned_task.worker == worker
-    assert not list(dispatch_service.dispatch([task.channel], worker=worker))
+    assert not list(dispatch_service.dispatch([task.channel], worker_id=worker.id))
 
 
 def test_dispatch_many(
@@ -48,7 +48,7 @@ def test_dispatch_many(
 
     task_factory(channel=channel, state=models.TaskState.DONE)
 
-    tasks = list(dispatch_service.dispatch([channel], worker=worker, limit=3))
+    tasks = list(dispatch_service.dispatch([channel], worker_id=worker.id, limit=3))
     db.expire_all()
     assert len(tasks) == 3
     for task in tasks:
@@ -67,7 +67,7 @@ def test_dispatch_many(
     assert len(remain_ids) == 1
     assert remain_ids[0] not in [task.id for task in tasks]
 
-    tasks = list(dispatch_service.dispatch(["my_channel"], worker=worker))
+    tasks = list(dispatch_service.dispatch(["my_channel"], worker_id=worker.id))
     assert len(tasks) == 1
 
 
