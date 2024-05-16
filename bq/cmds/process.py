@@ -143,7 +143,6 @@ def process_tasks(
             # polling
             db.close()
             try:
-                print("!!! poll")
                 for notification in dispatch_service.poll(timeout=config.POLL_TIMEOUT):
                     logger.debug("Receive notification %s", notification)
             except TimeoutError:
