@@ -25,11 +25,10 @@ def main(
     engine = create_engine(
         "postgresql://bq:@localhost/bq_test", poolclass=SingletonThreadPool
     )
-    Session.bind = engine
-
-    dispatch_service = DispatchService()
-
+    Session.configure(bind=engine)
     db = Session()
+    dispatch_service = DispatchService(db)
+
     logger.info(
         "Submit task with channel=%s, module=%s, func=%s", channel, module, func
     )
@@ -37,7 +36,7 @@ def main(
     db.add(task)
     dispatch_service.notify([channel])
     db.commit()
-    logger.info("Done")
+    logger.info("Done, submit task %s", task.id)
 
 
 if __name__ == "__main__":

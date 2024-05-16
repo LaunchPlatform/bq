@@ -109,7 +109,6 @@ def main(
     worker = models.Worker(name=platform.node())
     db.add(worker)
     dispatch_service.listen(channels)
-    db.flush()
     db.commit()
 
     logger.info("Created worker %s, name=%s", worker.id, worker.name)
@@ -142,6 +141,9 @@ def main(
                 )
                 # TODO: support processor pool and other approaches to dispatch the workload
                 registry.process(task)
+            # we will not see notifications in a transaction, need to close the transaction first before entering
+            # polling
+            db.close()
             try:
                 for notification in dispatch_service.poll(timeout=pull_timeout):
                     logger.debug("Receive notification %s", notification)
