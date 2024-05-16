@@ -164,6 +164,7 @@ def main(
                 )
                 # TODO: support processor pool and other approaches to dispatch the workload
                 registry.process(task)
+                db.close()
             # we will not see notifications in a transaction, need to close the transaction first before entering
             # polling
             db.close()
