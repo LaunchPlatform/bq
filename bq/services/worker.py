@@ -2,7 +2,6 @@ import datetime
 import typing
 
 from sqlalchemy import func
-from sqlalchemy.orm import object_session
 from sqlalchemy.orm import Query
 from sqlalchemy.orm import Session
 
@@ -14,9 +13,8 @@ class WorkerService:
         self.session = session
 
     def update_heartbeat(self, worker: models.Worker):
-        db = object_session(worker)
         worker.last_heartbeat = func.now()
-        db.add(worker)
+        self.session.add(worker)
 
     def make_dead_worker_query(self, timeout: int, limit: int = 5) -> Query:
         return (
