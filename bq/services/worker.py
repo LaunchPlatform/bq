@@ -23,7 +23,7 @@ class WorkerService:
             self.session.query(models.Worker.id)
             .filter(
                 models.Worker.last_heartbeat
-                > (func.now() - datetime.timedelta(seconds=timeout))
+                < (func.now() - datetime.timedelta(seconds=timeout))
             )
             .filter(models.Worker.state == models.WorkerState.RUNNING)
             .limit(limit)
@@ -38,16 +38,6 @@ class WorkerService:
                 state=models.WorkerState.NO_HEARTBEAT,
             )
             .returning(models.Worker.id)
-        )
-
-    def make_update_tasks_query(self, worker_query: typing.Any):
-        return (
-            models.Task.__table__.update()
-            .where(models.Task.worker_id.in_(worker_query))
-            .where(models.Task.state == models.TaskState.PROCESSING)
-            .values(
-                state=models.TaskState.PENDING,
-            )
         )
 
     def fetch_dead_workers(self, timeout: int, limit: int = 5) -> Query:
@@ -65,6 +55,16 @@ class WorkerService:
             models.Worker.id.in_(worker_ids)
         )
 
-    def reschedule_dead_tasks(self, worker_query: typing.Any) -> frozenset[str]:
+    def make_update_tasks_query(self, worker_query: typing.Any):
+        return (
+            models.Task.__table__.update()
+            .where(models.Task.worker_id.in_(worker_query))
+            .where(models.Task.state == models.TaskState.PROCESSING)
+            .values(
+                state=models.TaskState.PENDING,
+            )
+        )
+
+    def reschedule_dead_tasks(self, worker_query: typing.Any) -> int:
         update_dead_task_query = self.make_update_tasks_query(worker_query=worker_query)
-        self.session.execute(update_dead_task_query)
+        return self.session.execute(update_dead_task_query)

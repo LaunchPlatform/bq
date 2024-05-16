@@ -4,6 +4,7 @@ import click
 from sqlalchemy.engine import create_engine
 from sqlalchemy.pool import SingletonThreadPool
 
+from .. import models  # noqa
 from ..db.base import Base
 
 

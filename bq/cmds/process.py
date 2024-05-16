@@ -38,14 +38,15 @@ def update_workers(
     )
     while True:
         dead_workers = worker_service.fetch_dead_workers(timeout=heartbeat_timeout)
-        worker_service.reschedule_dead_tasks(
+        task_count = worker_service.reschedule_dead_tasks(
             dead_workers.with_entities(models.Worker.id)
         )
         for dead_worker in dead_workers:
             logger.info(
-                "Found dead worker %s (name=%s), reschedule dead tasks in channels %s",
+                "Found dead worker %s (name=%s), reschedule %s dead tasks in channels %s",
                 dead_worker.id,
                 dead_worker.name,
+                task_count,
                 dead_worker.channels,
             )
             dispatch_service.notify(dead_worker.channels)
