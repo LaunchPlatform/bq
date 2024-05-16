@@ -24,6 +24,22 @@ class Processor:
     auto_rollback_on_exc: bool = True
 
 
+class ProcessorHelper:
+    def __init__(self, func: typing.Callable, task_cls: typing.Type = models.Task):
+        self._func = func
+        self._task_cls = task_cls
+
+    def __call__(self, *args, **kwargs):
+        return self._func(*args, **kwargs)
+
+    def run(self, **kwargs) -> models.Task:
+        return self._task_cls(
+            module=self._func.__module__,
+            func_name=self._func.__name__,
+            kwargs=kwargs,
+        )
+
+
 def process_task(task: models.Task, processor: Processor):
     logger = logging.getLogger(__name__)
     db = object_session(task)
@@ -80,22 +96,27 @@ class Registry:
 
 
 def processor(
-    channel: str, auto_complete: bool = True, auto_rollback_on_exc: bool = True
+    channel: str,
+    auto_complete: bool = True,
+    auto_rollback_on_exc: bool = True,
+    task_cls: typing.Type = models.Task,
 ) -> typing.Callable:
     def decorator(wrapped: typing.Callable):
+        wrapped_obj = ProcessorHelper(wrapped, task_cls=task_cls)
+
         def callback(scanner: venusian.Scanner, name: str, ob: typing.Callable):
             processor = Processor(
-                module=ob.__module__,
+                module=wrapped.__module__,
                 name=name,
                 channel=channel,
-                func=ob,
+                func=wrapped,
                 auto_complete=auto_complete,
                 auto_rollback_on_exc=auto_rollback_on_exc,
             )
             scanner.registry.add(processor)
 
-        venusian.attach(wrapped, callback, category=BQ_PROCESSOR_CATEGORY)
-        return wrapped
+        venusian.attach(wrapped_obj, callback, category=BQ_PROCESSOR_CATEGORY)
+        return wrapped_obj
 
     return decorator
 

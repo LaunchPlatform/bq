@@ -7,8 +7,8 @@ from bq.services.dispatch import DispatchService
 
 
 @pytest.fixture
-def dispatch_service() -> DispatchService:
-    return DispatchService()
+def dispatch_service(db: Session) -> DispatchService:
+    return DispatchService(db)
 
 
 def test_dispatch_empty(

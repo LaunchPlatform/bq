@@ -159,3 +159,12 @@ def test_process_task_auto_rollback_on_exc(
     db.expire_all()
     assert task.state == models.TaskState.FAILED
     assert task.func_name == expected_func_name
+
+
+def test_processor_helper(registry: Registry, processor_module):
+    from .fixtures.processors import processor0
+
+    task = processor0.run(k0="v0")
+    assert isinstance(task, models.Task)
+    assert task.module == processor_module
+    assert task.func_name == "processor0"
