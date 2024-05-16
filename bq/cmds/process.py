@@ -4,6 +4,8 @@ import logging
 import platform
 import threading
 import time
+import typing
+import uuid
 
 import click
 from sqlalchemy import func
@@ -17,11 +19,13 @@ from ..services.dispatch import DispatchService
 
 
 def update_workers(
-    db: Session,
-    current_worker: models.Worker,
+    make_session: typing.Callable[[], Session],
+    worker_id: uuid.UUID,
     heartbeat_period: int,
     heartbeat_timeout: int,
 ):
+    db: Session = make_session()
+    current_worker = db.get(models.Worker, worker_id)
     logger = logging.getLogger(__name__)
     logger.info(
         "Updating worker %s with heartbeat_period=%s, heartbeat_timeout=%s",
@@ -84,9 +88,10 @@ def main(
 
     # FIXME: the uri from opt
     engine = create_engine(
-        "postgresql://bq:@localhost/bq_test", poolclass=SingletonThreadPool
+        "postgresql://bq:@localhost/bq_test",
+        poolclass=SingletonThreadPool,
     )
-    Session.bind = engine
+    Session.configure(bind=engine)
 
     logger.info("Scanning packages %s", packages)
     pkgs = list(map(importlib.import_module, packages))
@@ -99,9 +104,8 @@ def main(
                     "  Processor module %r, processor %r", module, processor.name
                 )
 
-    dispatch_service = DispatchService()
-
     db = Session()
+    dispatch_service = DispatchService(session=db)
     worker = models.Worker(name=platform.node())
     db.add(worker)
     dispatch_service.listen(channels)
@@ -114,8 +118,8 @@ def main(
     worker_update_thread = threading.Thread(
         target=functools.partial(
             update_workers,
-            db=db,
-            worker=worker,
+            make_session=Session,
+            worker_id=worker.id,
             heartbeat_period=worker_heartbeat_period,
             heartbeat_timeout=worker_heartbeat_timeout,
         ),

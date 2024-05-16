@@ -17,13 +17,12 @@ class Notification:
 
 
 class DispatchService:
-    def __init__(self, session_cls: typing.Type[Session] = Session):
-        self.session_cls = session_cls
+    def __init__(self, session: Session):
+        self.session = session
 
     def make_task_query(self, channels: typing.Sequence[str], limit: int = 1) -> Query:
-        session = self.session_cls()
         return (
-            session.query(models.Task.id)
+            self.session.query(models.Task.id)
             .filter(models.Task.channel.in_(channels))
             .filter(models.Task.state == models.TaskState.PENDING)
             .order_by(models.Task.created_at)
@@ -45,29 +44,26 @@ class DispatchService:
     def dispatch(
         self, channels: typing.Sequence[str], worker: models.Worker, limit: int = 1
     ) -> Query:
-        session = self.session_cls()
         task_query = self.make_task_query(channels, limit=limit)
         task_subquery = task_query.scalar_subquery()
         task_ids = [
             item[0]
-            for item in session.execute(
+            for item in self.session.execute(
                 self.make_update_query(task_subquery, worker_id=worker.id)
             )
         ]
         # TODO: ideally returning with (models.Task) should return the whole model, but SQLAlchemy is returning
         #       it columns in rows. We can save a round trip if we can find out how to solve this
-        return session.query(models.Task).filter(models.Task.id.in_(task_ids))
+        return self.session.query(models.Task).filter(models.Task.id.in_(task_ids))
 
     def listen(self, channels: typing.Sequence[str]):
-        session = self.session_cls()
-        conn = session.connection()
+        conn = self.session.connection()
         for channel in channels:
             quoted_channel = conn.dialect.identifier_preparer.quote_identifier(channel)
             conn.exec_driver_sql(f"LISTEN {quoted_channel}")
 
     def poll(self, timeout: int = 5) -> typing.Generator[Notification, None, None]:
-        session = self.session_cls()
-        conn = session.connection()
+        conn = self.session.connection()
         driver_conn = conn.connection.driver_connection
 
         def pop_notifies():
@@ -94,8 +90,7 @@ class DispatchService:
                 yield from pop_notifies()
 
     def notify(self, channels: typing.Sequence[str]):
-        session = self.session_cls()
-        conn = session.connection()
+        conn = self.session.connection()
         for channel in channels:
             quoted_channel = conn.dialect.identifier_preparer.quote_identifier(channel)
             conn.exec_driver_sql(f"NOTIFY {quoted_channel}")
