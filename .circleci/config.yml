@@ -9,7 +9,7 @@ jobs:
   test:
     docker:
       - image: cimg/python:3.10.11
-      - image: cimg/postgres:16.3.0
+      - image: cimg/postgres:16.2
         environment:
           POSTGRES_USER: bq
           POSTGRES_DB: bq_test
