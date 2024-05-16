@@ -64,10 +64,8 @@ def update_workers(
         db.commit()
 
 
-@click.command()
-@click.argument("channels", nargs=-1)
 @inject
-def main(
+def process_tasks(
     channels: tuple[str, ...],
     config: Config = Provide[Container.config],
     session_factory: typing.Callable = Provide[Container.session_factory],
@@ -75,7 +73,6 @@ def main(
     dispatch_service: DispatchService = Provide[Container.dispatch_service],
     worker_service: WorkerService = Provide[Container.worker_service],
 ):
-    logging.basicConfig(level=logging.INFO)
     logger = logging.getLogger(__name__)
 
     if not channels:
@@ -121,25 +118,32 @@ def main(
 
     try:
         while True:
-            for task in dispatch_service.dispatch(
-                channels,
-                worker_id=worker_id,
-                limit=config.BATCH_SIZE,
-            ):
-                logger.info(
-                    "Processing task %s, channel=%s, module=%s, func=%s",
-                    task.id,
-                    task.channel,
-                    task.module,
-                    task.func_name,
-                )
-                # TODO: support processor pool and other approaches to dispatch the workload
-                registry.process(task)
-                db.close()
+            while True:
+                found_task = False
+                for task in dispatch_service.dispatch(
+                    channels,
+                    worker_id=worker_id,
+                    limit=config.BATCH_SIZE,
+                ):
+                    found_task = True
+                    logger.info(
+                        "Processing task %s, channel=%s, module=%s, func=%s",
+                        task.id,
+                        task.channel,
+                        task.module,
+                        task.func_name,
+                    )
+                    # TODO: support processor pool and other approaches to dispatch the workload
+                    registry.process(task)
+                    db.close()
+                if not found_task:
+                    # we should try to keep dispatching until we cannot find tasks
+                    break
             # we will not see notifications in a transaction, need to close the transaction first before entering
             # polling
             db.close()
             try:
+                print("!!! poll")
                 for notification in dispatch_service.poll(timeout=config.POLL_TIMEOUT):
                     logger.debug("Receive notification %s", notification)
             except TimeoutError:
@@ -160,7 +164,16 @@ def main(
     logger.info("Shutdown gracefully")
 
 
+@click.command()
+@click.argument("channels", nargs=-1)
+def main(
+    channels: tuple[str, ...],
+):
+    process_tasks(channels)
+
+
 if __name__ == "__main__":
+    logging.basicConfig(level=logging.INFO)
     container = Container()
     container.wire(modules=[__name__])
     main()
