@@ -56,7 +56,6 @@ def update_workers(
             db.commit()
 
         time.sleep(heartbeat_period)
-        # TODO: fetch dead workers and clear their processing tasks
         current_worker.last_heartbeat = func.now()
         db.add(current_worker)
         db.commit()

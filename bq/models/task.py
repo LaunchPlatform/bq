@@ -1,13 +1,16 @@
 import enum
 
 from sqlalchemy import Column
+from sqlalchemy import Connection
 from sqlalchemy import DateTime
 from sqlalchemy import Enum
 from sqlalchemy import ForeignKey
 from sqlalchemy import func
+from sqlalchemy import inspect
 from sqlalchemy import String
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.dialects.postgresql import UUID
+from sqlalchemy.orm import Mapper
 from sqlalchemy.orm import relationship
 
 from ..db.base import Base
@@ -67,3 +70,28 @@ class Task(Base):
             ("channel", self.channel),
         ]
         return f"<{self.__class__.__name__} {make_repr_attrs(items)}>"
+
+
+def task_insert_notify(mapper: Mapper, connection: Connection, target: Task):
+    from .. import models
+
+    if target.state != models.TaskState.PENDING:
+        return
+    quoted_channel = connection.dialect.identifier_preparer.quote_identifier(
+        target.channel
+    )
+    connection.exec_driver_sql(f"NOTIFY {quoted_channel}")
+
+
+def task_update_notify(mapper: Mapper, connection: Connection, target: Task):
+    from .. import models
+
+    history = inspect(target).attrs.state.history
+    if not history.has_changes():
+        return
+    if target.state != models.TaskState.PENDING:
+        return
+    quoted_channel = connection.dialect.identifier_preparer.quote_identifier(
+        target.channel
+    )
+    connection.exec_driver_sql(f"NOTIFY {quoted_channel}")
