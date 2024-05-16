@@ -67,4 +67,5 @@ class WorkerService:
 
     def reschedule_dead_tasks(self, worker_query: typing.Any) -> int:
         update_dead_task_query = self.make_update_tasks_query(worker_query=worker_query)
-        return self.session.execute(update_dead_task_query)
+        res = self.session.execute(update_dead_task_query)
+        return res.rowcount

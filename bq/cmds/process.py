@@ -41,7 +41,9 @@ def update_workers(
         task_count = worker_service.reschedule_dead_tasks(
             dead_workers.with_entities(models.Worker.id)
         )
+        found_dead_worker = False
         for dead_worker in dead_workers:
+            found_dead_worker = True
             logger.info(
                 "Found dead worker %s (name=%s), reschedule %s dead tasks in channels %s",
                 dead_worker.id,
@@ -50,6 +52,8 @@ def update_workers(
                 dead_worker.channels,
             )
             dispatch_service.notify(dead_worker.channels)
+        if found_dead_worker:
+            db.commit()
 
         time.sleep(heartbeat_period)
         # TODO: fetch dead workers and clear their processing tasks
@@ -176,7 +180,8 @@ def main(
 
     worker.state = models.WorkerState.SHUTDOWN
     db.add(worker)
-    worker_service.reschedule_dead_tasks([worker.id])
+    task_count = worker_service.reschedule_dead_tasks([worker.id])
+    logger.info("Reschedule %s tasks", task_count)
     dispatch_service.notify(channels)
     db.commit()
 
