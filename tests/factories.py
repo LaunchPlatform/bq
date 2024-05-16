@@ -15,6 +15,7 @@ class BaseFactory(SQLAlchemyModelFactory):
 class WorkerFactory(BaseFactory):
     state = models.WorkerState.RUNNING
     name = Faker("slug")
+    channels = ["default"]
     last_heartbeat = func.now()
     created_at = func.now()
 

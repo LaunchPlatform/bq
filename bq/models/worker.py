@@ -5,6 +5,7 @@ from sqlalchemy import DateTime
 from sqlalchemy import Enum
 from sqlalchemy import func
 from sqlalchemy import String
+from sqlalchemy.dialects.postgresql import ARRAY
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import relationship
 
@@ -35,6 +36,8 @@ class Worker(Base):
     )
     # name of the worker
     name = Column(String, nullable=False)
+    # the channels we are processing
+    channels = Column(ARRAY(String), nullable=False)
     # last heartbeat of this worker
     last_heartbeat = Column(
         DateTime(timezone=True),

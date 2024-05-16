@@ -16,6 +16,7 @@ from .. import models
 from ..db.session import Session
 from ..processors.registry import collect
 from ..services.dispatch import DispatchService
+from ..services.worker import WorkerService
 
 
 def update_workers(
@@ -107,7 +108,8 @@ def main(
 
     db = Session()
     dispatch_service = DispatchService(session=db)
-    worker = models.Worker(name=platform.node())
+    worker_service = WorkerService(session=db)
+    worker = models.Worker(name=platform.node(), channels=channels)
     db.add(worker)
     dispatch_service.listen(channels)
     db.commit()
@@ -158,7 +160,7 @@ def main(
 
     worker.state = models.WorkerState.SHUTDOWN
     db.add(worker)
-    # TODO: clean up attached pending tasks
+    dispatch_service.notify(worker_service.update_dead_tasks([worker.id]))
     db.commit()
 
     logger.info("Shutdown gracefully")
