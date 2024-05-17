@@ -7,7 +7,7 @@ BeanQueue, lightweight worker queue framework based on [SQLAlchemy](https://www.
 
 - **Super lightweight**: Under 1K lines
 - **Easy-to-deploy**: Only rely on PostgreSQL
-- **Easy-to-use**: Provide command line tools for processing tasks
+- **Easy-to-use**: Provide command line tools for processing tasks, also helpers for generating tasks models
 - **Auto-notify**: Notify will automatically be generated and send for inserted or update tasks
 - **Worker heartbeat and auto-reschedule**: Each worker keeps updating heartbeat, if one is dead, the others will reschedule the tasks
 - **Customizable**: Use it as an library and build your own worker queue
