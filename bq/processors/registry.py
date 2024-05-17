@@ -100,7 +100,7 @@ class Registry:
 
 
 def processor(
-    channel: str,
+    channel: str = "default",
     auto_complete: bool = True,
     auto_rollback_on_exc: bool = True,
     task_cls: typing.Type = models.Task,
