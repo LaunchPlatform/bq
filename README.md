@@ -136,7 +136,7 @@ Many other behaviors of this framework can also be modified by overriding the co
 ### Define your own tables
 
 BeanQueue is designed to be as customizable as much as possible.
-Of course, you can define your own SQLAlchemy model instead of the ones we provided. 
+Of course, you can define your own SQLAlchemy model instead of using the ones we provided. 
 
 To make defining your own `Task` model or `Worker` model much easier, you can use our mixin classes:
 
