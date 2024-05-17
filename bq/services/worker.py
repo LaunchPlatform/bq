@@ -62,7 +62,7 @@ class WorkerService:
         ]
         # TODO: ideally returning with (models.Task) should return the whole model, but SQLAlchemy is returning
         #       it columns in rows. We can save a round trip if we can find out how to solve this
-        return self.session.query(models.Worker).filter(
+        return self.session.query(self.worker_model).filter(
             self.worker_model.id.in_(worker_ids)
         )
 
