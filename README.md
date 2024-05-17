@@ -39,7 +39,7 @@ def resize_image(db: Session, task: models.Task, width: int, height: int):
 
 ```
 
-To submit a task, you can either use `bg.models.Task` model object to construct the task object, insert into the
+To submit a task, you can either use `bq.models.Task` model object to construct the task object, insert into the
 database session and commit, or you can use the helper like this:
 
 ```python
@@ -61,7 +61,47 @@ db.commit()
 To run the worker, you can do this:
 
 ```bash
-PROCESSOR_PACKAGES='["my_pkgs.processors"]' python -m bq.cmds.process images
+BQ_PROCESSOR_PACKAGES='["my_pkgs.processors"]' python -m bq.cmds.process images
+```
+
+To submit a task for testing purpose, you can do
+
+```bash
+python -m bq.cmds.submit images my_pkgs.processors resize_image -k '{"width": 200, "height": 300}'
+```
+
+To create tables for BeanQueue, you can run
+
+```bash
+python -m bq.cmds.create_tables
+```
+
+### Configurations
+
+Configurations can be modified by setting environment variables with `BQ_` prefix.
+For example, to set the python packages to scan for processors, you can set `BQ_PROCESSOR_PACKAGES`.
+To change the PostgreSQL database to connect to, you can set `BQ_DATABASE_URL`.
+The complete definition of configurations can be found at the [bq/config.py](bq/config.py) module.
+For now, the configurations only affect command line tools.
+
+If you want to configure BeanQueue programmatically for the command lines, you can override our [dependency-injector](https://python-dependency-injector.ets-labs.org/)'s container defined at [bq/container.py](bq/container.py) and call the command function manually.
+For example:
+
+```bash
+import bq.cmds.process
+from bq.container import Container
+
+container = Container()
+container.wire(modules=[bq.cmds.process])
+with container.config.override(
+    Config(
+        PROCESSOR_PACKAGES=["my_pkgs.processors"],
+        DATABASE_URL=db_url,
+        BATCH_SIZE=10,
+    )
+):
+    bq.cmds.process.process_tasks(channels=("images",))
+
 ```
 
 ## Why?
