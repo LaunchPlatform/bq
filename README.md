@@ -65,7 +65,7 @@ db.add(file)
 db.commit()
 ```
 
-Or, you can use the helper like this:
+Or, you can use the `run` helper like this:
 
 ```python
 from .processors import resize_image
