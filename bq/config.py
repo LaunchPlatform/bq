@@ -42,6 +42,8 @@ class Config(BaseSettings):
     ) -> typing.Any:
         if isinstance(v, str):
             return v
+        if isinstance(v, PostgresDsn):
+            return v
         return PostgresDsn.build(
             scheme="postgresql",
             username=info.data.get("POSTGRES_USER"),
