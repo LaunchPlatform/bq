@@ -14,6 +14,7 @@ from dependency_injector.wiring import Provide
 from sqlalchemy import func
 from sqlalchemy.orm import Session as DBSession
 
+from .. import constants
 from .. import models
 from ..config import Config
 from ..container import Container
@@ -76,7 +77,7 @@ def process_tasks(
     logger = logging.getLogger(__name__)
 
     if not channels:
-        channels = ["default"]
+        channels = [constants.DEFAULT_CHANNEL]
 
     if not config.PROCESSOR_PACKAGES:
         logger.error("No PROCESSOR_PACKAGES provided")

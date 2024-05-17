@@ -7,9 +7,8 @@ import typing
 import venusian
 from sqlalchemy.orm import object_session
 
-from bq import models
-
-BQ_PROCESSOR_CATEGORY = "bq_processor"
+from .. import constants
+from .. import models
 
 
 @dataclasses.dataclass(frozen=True)
@@ -100,7 +99,7 @@ class Registry:
 
 
 def processor(
-    channel: str = "default",
+    channel: str = constants.DEFAULT_CHANNEL,
     auto_complete: bool = True,
     auto_rollback_on_exc: bool = True,
     task_cls: typing.Type = models.Task,
@@ -121,7 +120,7 @@ def processor(
                 raise ValueError("Name is not the same")
             scanner.registry.add(processor)
 
-        venusian.attach(helper_obj, callback, category=BQ_PROCESSOR_CATEGORY)
+        venusian.attach(helper_obj, callback, category=constants.BQ_PROCESSOR_CATEGORY)
         return helper_obj
 
     return decorator
@@ -132,5 +131,5 @@ def collect(packages: list[typing.Any], registry: Registry | None = None) -> Reg
         registry = Registry()
     scanner = venusian.Scanner(registry=registry)
     for package in packages:
-        scanner.scan(package, categories=(BQ_PROCESSOR_CATEGORY,))
+        scanner.scan(package, categories=(constants.BQ_PROCESSOR_CATEGORY,))
     return registry

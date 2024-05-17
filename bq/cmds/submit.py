@@ -25,7 +25,6 @@ def main(
     kwargs: str | None,
     db: Session = Provide[Container.session],
 ):
-    logging.basicConfig(level=logging.INFO)
     logger = logging.getLogger(__name__)
 
     logger.info(
@@ -43,6 +42,7 @@ def main(
 
 
 if __name__ == "__main__":
+    logging.basicConfig(level=logging.INFO)
     container = Container()
     container.wire(modules=[__name__])
     main()
