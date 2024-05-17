@@ -3,11 +3,11 @@ BeanQueue, lightweight worker queue framework based on SQLAlchemy and PostgreSQL
 
 ## Features
 
-- *Super lightweight*: Under 1K lines
-- *Easy-to-deploy*: Only rely on PostgreSQL
-- *Easy-to-use*: Provide command line tools for processing tasks
-- *Customizable*: Use it as an library and build your own worker queue
-- *Native DB operations*: Commit your tasks with other db entries altogether
+- **Super lightweight**: Under 1K lines
+- **Easy-to-deploy**: Only rely on PostgreSQL
+- **Easy-to-use**: Provide command line tools for processing tasks
+- **Customizable**: Use it as an library and build your own worker queue
+- **Native DB operations**: Commit your tasks with other db entries altogether without worrying about data inconsistent issue
 
 ## Why?
 
