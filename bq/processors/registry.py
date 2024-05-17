@@ -50,21 +50,24 @@ def process_task(task: models.Task, processor: Processor):
         base_kwargs["task"] = task
     if "db" in func_signature.parameters:
         base_kwargs["db"] = db
-    try:
-        result = processor.func(**base_kwargs, **task.kwargs)
-        if processor.auto_complete:
-            logger.info("Task %s auto complete", task.id)
-            task.state = models.TaskState.DONE
-            task.result = result
+    with db.begin_nested() as savepoint:
+        try:
+            result = processor.func(**base_kwargs, **task.kwargs)
+            savepoint.commit()
+        except Exception:
+            logger.error("Unhandled exception for task %s", task.id, exc_info=True)
+            if processor.auto_rollback_on_exc:
+                savepoint.rollback()
+            # TODO: add error event
+            task.state = models.TaskState.FAILED
             db.add(task)
-        return result
-    except Exception:
-        logger.error("Unhandled exception for task %s", task.id, exc_info=True)
-        if processor.auto_rollback_on_exc:
-            db.rollback()
-        # TODO: add error event
-        task.state = models.TaskState.FAILED
+            return
+    if processor.auto_complete:
+        logger.info("Task %s auto complete", task.id)
+        task.state = models.TaskState.DONE
+        task.result = result
         db.add(task)
+    return result
 
 
 class Registry:
