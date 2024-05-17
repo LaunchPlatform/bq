@@ -76,8 +76,11 @@ def test_reschedule_dead_tasks(
     assert task_count == 3
     db.commit()
     assert dead_task0.state == models.TaskState.PENDING
+    assert dead_task0.worker is None
     assert dead_task1.state == models.TaskState.PENDING
+    assert dead_task1.worker is None
     assert dead_task2.state == models.TaskState.PENDING
+    assert dead_task2.worker is None
     assert done_task0.state == models.TaskState.DONE
     assert other_task0.state == models.TaskState.PROCESSING
     assert other_task1.state == models.TaskState.PROCESSING
