@@ -1,6 +1,8 @@
 # BeanQueue
 BeanQueue, lightweight worker queue framework based on [SQLAlchemy](https://www.sqlalchemy.org/) and [PostgreSQL SKIP LOCKED queries](https://www.2ndquadrant.com/en/blog/what-is-select-skip-locked-for-in-postgresql-9-5/)
 
+**Notice**: Still in its early stage, we built this for [BeanHub](https://beanhub.io)'s internal usage. May change rapidly. Use at your own risk for now.
+
 ## Features
 
 - **Super lightweight**: Under 1K lines
@@ -194,6 +196,14 @@ Many provide an abstraction function or gRPC method of pushing tasks into the da
 
 With BeanQueue, we don't abstract away the logic of publishing a new task into the queue.
 Instead, we open it up to let the user insert the row and choose when and what to commit to the task.
+
+## Sponsor
+
+<p align="center">
+  <a href="https://beanhub.io"><img src="https://github.com/LaunchPlatform/beanqueue/raw/master/assets/beanqueue.svg?raw=true" alt="BeanHub logo" /></a>
+</p>
+
+A modern accounting book service based on the most popular open source version control system [Git](https://git-scm.com/) and text-based double entry accounting book software [Beancount](https://beancount.github.io/docs/index.html).
 
 ## Alternatives
 
