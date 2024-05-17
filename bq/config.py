@@ -1,9 +1,9 @@
 import typing
 
 from pydantic import field_validator
-from pydantic import MultiHostUrl
 from pydantic import PostgresDsn
 from pydantic import ValidationInfo
+from pydantic_core import MultiHostUrl
 from pydantic_settings import BaseSettings
 from pydantic_settings import SettingsConfigDict
 
