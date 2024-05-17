@@ -19,6 +19,9 @@ class WorkerService:
         self.task_model: typing.Type[models.Task] = task_model
         self.worker_model: typing.Type[models.Worker] = worker_model
 
+    def get_worker(self, id: typing.Any) -> typing.Any:
+        return self.session.get(self.worker_model, id)
+
     def make_worker(self, name: str, channels: tuple[str, ...]):
         return self.worker_model(name=name, channels=channels)
 

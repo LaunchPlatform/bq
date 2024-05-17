@@ -23,6 +23,12 @@ class Config(BaseSettings):
     # Timeout of worker heartbeat in seconds
     WORKER_HEARTBEAT_TIMEOUT: int = 100
 
+    # which task model to use
+    TASK_MODEL: str = "bq.Task"
+
+    # which worker model to use
+    WORKER_MODEL: str = "bq.Worker"
+
     POSTGRES_SERVER: str = "localhost"
     POSTGRES_USER: str = "bq"
     POSTGRES_PASSWORD: str = ""

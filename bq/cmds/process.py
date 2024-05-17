@@ -22,27 +22,32 @@ from ..services.dispatch import DispatchService
 from ..services.worker import WorkerService
 
 
+@inject
 def update_workers(
-    make_session: typing.Callable[[], DBSession],
     worker_id: typing.Any,
-    heartbeat_period: int,
-    heartbeat_timeout: int,
+    config: Config = Provide[Container.config],
+    session_factory: typing.Callable = Provide[Container.session_factory],
+    make_dispatch_service: typing.Callable = Provide[Container.make_dispatch_service],
+    make_worker_service: typing.Callable = Provide[Container.make_worker_service],
 ):
-    db: DBSession = make_session()
-    worker_service = WorkerService(session=db)
-    dispatch_service = DispatchService(session=db)
-    current_worker = db.get(models.Worker, worker_id)
+    db: DBSession = session_factory()
+    worker_service: WorkerService = make_worker_service(session=db)
+    dispatch_service: DispatchService = make_dispatch_service(session=db)
+    current_worker = worker_service.get_worker(worker_id)
     logger = logging.getLogger(__name__)
     logger.info(
         "Updating worker %s with heartbeat_period=%s, heartbeat_timeout=%s",
         current_worker.id,
-        heartbeat_period,
-        heartbeat_timeout,
+        config.WORKER_HEARTBEAT_PERIOD,
+        config.WORKER_HEARTBEAT_TIMEOUT,
     )
     while True:
-        dead_workers = worker_service.fetch_dead_workers(timeout=heartbeat_timeout)
+        dead_workers = worker_service.fetch_dead_workers(
+            timeout=config.WORKER_HEARTBEAT_TIMEOUT
+        )
         task_count = worker_service.reschedule_dead_tasks(
-            dead_workers.with_entities(models.Worker.id)
+            # TODO: a better way to abstract this?
+            dead_workers.with_entities(current_worker.__class__.id)
         )
         found_dead_worker = False
         for dead_worker in dead_workers:
@@ -67,7 +72,7 @@ def update_workers(
             )
             sys.exit(0)
 
-        time.sleep(heartbeat_period)
+        time.sleep(config.WORKER_HEARTBEAT_PERIOD)
         current_worker.last_heartbeat = func.now()
         db.add(current_worker)
         db.commit()
@@ -113,10 +118,7 @@ def process_tasks(
     worker_update_thread = threading.Thread(
         target=functools.partial(
             update_workers,
-            make_session=session_factory,
             worker_id=worker.id,
-            heartbeat_period=config.WORKER_HEARTBEAT_PERIOD,
-            heartbeat_timeout=config.WORKER_HEARTBEAT_TIMEOUT,
         ),
         name="update_workers",
     )
