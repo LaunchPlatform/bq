@@ -33,7 +33,7 @@ from .. import image_utils
 
 @processor(channel="images")
 def resize_image(db: Session, task: models.Task, width: int, height: int):
-    image = db.query(my_models.Image).filter(my_models.Image.task == task)
+    image = db.query(my_models.Image).filter(my_models.Image.task == task).one()
     image_utils.resize(image, size=(width, height))
     db.add(image)
     # by default the `processor` decorator has `auto_complete` flag turns on,
@@ -51,6 +51,7 @@ from bq import models
 from .db import Session
 from .. import my_models
 
+db = Session()
 task = models.Task(
     channel="files",
     module="my_pkgs.files.processors",
