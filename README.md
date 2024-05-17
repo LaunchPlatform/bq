@@ -1,5 +1,5 @@
 # BeanQueue
-BeanQueue, lightweight worker queue framework based on [SQLAlchemy](https://www.sqlalchemy.org/) and [PostgreSQL SKIP LOCKED queries](https://www.2ndquadrant.com/en/blog/what-is-select-skip-locked-for-in-postgresql-9-5/)
+BeanQueue, lightweight worker queue framework based on [SQLAlchemy](https://www.sqlalchemy.org/), [PostgreSQL SKIP LOCKED queries](https://www.2ndquadrant.com/en/blog/what-is-select-skip-locked-for-in-postgresql-9-5/) and [NOTIFY](https://www.postgresql.org/docs/current/sql-notify.html) / [LISTEN](https://www.postgresql.org/docs/current/sql-listen.html) statements.
 
 **Notice**: Still in its early stage, we built this for [BeanHub](https://beanhub.io)'s internal usage. May change rapidly. Use at your own risk for now.
 
