@@ -111,22 +111,20 @@ def notify_if_needed(connection: Connection, task: Task):
     connection.exec_driver_sql(f"NOTIFY {quoted_channel}")
 
 
-@event.listens_for(Task, "after_insert")
 def task_insert_notify(mapper: Mapper, connection: Connection, target: Task):
-    from .. import models
-
-    if target.state != models.TaskState.PENDING:
+    if target.state != TaskState.PENDING:
         return
     notify_if_needed(connection, target)
 
 
-@event.listens_for(Task, "after_update")
 def task_update_notify(mapper: Mapper, connection: Connection, target: Task):
-    from .. import models
-
     history = inspect(target).attrs.state.history
     if not history.has_changes():
         return
-    if target.state != models.TaskState.PENDING:
+    if target.state != TaskState.PENDING:
         return
     notify_if_needed(connection, target)
+
+
+event.listens_for(Task, "after_insert")(task_insert_notify)
+event.listens_for(Task, "after_update")(task_update_notify)

@@ -117,6 +117,7 @@ For example:
 
 ```python
 import bq
+from bq.cmds.process import process_tasks
 from .my_config import config
 
 container = bq.Container()
@@ -127,7 +128,7 @@ config = bq.Config(
     BATCH_SIZE=10,
 )
 with container.config.override(config):
-    bq.process_tasks(channels=("images",))
+    process_tasks(channels=("images",))
 ```
 
 Many other behaviors of this framework can also be modified by overriding the container defined at [bq/container.py](bq/container.py).
