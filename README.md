@@ -38,6 +38,9 @@ def resize_image(db: Session, task: models.Task, width: int, height: int):
     # so it will commit the db changes for us automatically
 ```
 
+The `db` and `task` keyword arguments are optional.
+If you don't need to access the task object, you can simply define the function without these two parameters.
+
 To submit a task, you can either use `bq.models.Task` model object to construct the task object, insert into the
 database session and commit.
 
