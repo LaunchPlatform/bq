@@ -200,7 +200,7 @@ Instead, we open it up to let the user insert the row and choose when and what t
 ## Sponsor
 
 <p align="center">
-  <a href="https://beanhub.io"><img src="https://github.com/LaunchPlatform/beanqueue/raw/master/assets/beanqueue.svg?raw=true" alt="BeanHub logo" /></a>
+  <a href="https://beanhub.io"><img src="https://github.com/LaunchPlatform/bq/raw/master/assets/beanhub.svg?raw=true" alt="BeanHub logo" /></a>
 </p>
 
 A modern accounting book service based on the most popular open source version control system [Git](https://git-scm.com/) and text-based double entry accounting book software [Beancount](https://beancount.github.io/docs/index.html).
