@@ -50,9 +50,10 @@ def process_task(task: models.Task, processor: Processor):
     if "db" in func_signature.parameters:
         base_kwargs["db"] = db
     with db.begin_nested() as savepoint:
+        if "savepoint" in func_signature.parameters:
+            base_kwargs["savepoint"] = savepoint
         try:
             result = processor.func(**base_kwargs, **task.kwargs)
-            savepoint.commit()
         except Exception as exc:
             logger.error("Unhandled exception for task %s", task.id, exc_info=True)
             if processor.auto_rollback_on_exc:
