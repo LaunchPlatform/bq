@@ -6,7 +6,6 @@ import sys
 import threading
 import time
 import typing
-import uuid
 
 import click
 from dependency_injector.wiring import inject
@@ -25,7 +24,7 @@ from ..services.worker import WorkerService
 
 def update_workers(
     make_session: typing.Callable[[], DBSession],
-    worker_id: uuid.UUID,
+    worker_id: typing.Any,
     heartbeat_period: int,
     heartbeat_timeout: int,
 ):
@@ -103,7 +102,7 @@ def process_tasks(
                     "  Processor module %r, processor %r", module, processor.name
                 )
 
-    worker = models.Worker(name=platform.node(), channels=channels)
+    worker = worker_service.make_worker(name=platform.node(), channels=channels)
     db.add(worker)
     dispatch_service.listen(channels)
     db.commit()

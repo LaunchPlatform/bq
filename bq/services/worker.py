@@ -19,6 +19,9 @@ class WorkerService:
         self.task_model: typing.Type[models.Task] = task_model
         self.worker_model: typing.Type[models.Worker] = worker_model
 
+    def make_worker(self, name: str, channels: tuple[str, ...]):
+        return self.worker_model(name=name, channels=channels)
+
     def update_heartbeat(self, worker: models.Worker):
         worker.last_heartbeat = func.now()
         self.session.add(worker)
