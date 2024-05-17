@@ -30,7 +30,8 @@ def test_process_cmd(db: Session, db_url: str):
         proc.start()
         procs.append(proc)
 
-    for i in range(1000):
+    task_count = 1000
+    for i in range(task_count):
         task = sum.run(num_0=i, num_1=i * 3)
         db.add(task)
     db.commit()
@@ -42,7 +43,7 @@ def test_process_cmd(db: Session, db_url: str):
             .filter(models.Task.state == models.TaskState.DONE)
             .count()
         )
-        if done_tasks == 1000:
+        if done_tasks == task_count:
             break
         delta = datetime.datetime.now() - begin
         if delta.total_seconds() > 30:

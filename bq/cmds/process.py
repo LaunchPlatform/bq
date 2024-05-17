@@ -119,13 +119,12 @@ def process_tasks(
     try:
         while True:
             while True:
-                found_task = False
-                for task in dispatch_service.dispatch(
+                tasks = dispatch_service.dispatch(
                     channels,
                     worker_id=worker_id,
                     limit=config.BATCH_SIZE,
-                ):
-                    found_task = True
+                ).all()
+                for task in tasks:
                     logger.info(
                         "Processing task %s, channel=%s, module=%s, func=%s",
                         task.id,
@@ -135,10 +134,11 @@ def process_tasks(
                     )
                     # TODO: support processor pool and other approaches to dispatch the workload
                     registry.process(task)
-                    db.close()
-                if not found_task:
+                if not tasks:
                     # we should try to keep dispatching until we cannot find tasks
                     break
+                else:
+                    db.commit()
             # we will not see notifications in a transaction, need to close the transaction first before entering
             # polling
             db.close()

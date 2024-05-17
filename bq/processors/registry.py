@@ -57,7 +57,6 @@ def process_task(task: models.Task, processor: Processor):
             task.state = models.TaskState.DONE
             task.result = result
             db.add(task)
-            db.commit()
         return result
     except Exception:
         logger.error("Unhandled exception for task %s", task.id, exc_info=True)
@@ -66,7 +65,6 @@ def process_task(task: models.Task, processor: Processor):
         # TODO: add error event
         task.state = models.TaskState.FAILED
         db.add(task)
-        db.commit()
 
 
 class Registry:
@@ -92,7 +90,6 @@ class Registry:
             # TODO: add error event
             task.state = models.TaskState.FAILED
             db.add(task)
-            db.commit()
             return
         return process_task(task, processor)
 
