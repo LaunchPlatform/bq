@@ -1,6 +1,7 @@
 import typing
 
 from pydantic import field_validator
+from pydantic import MultiHostUrl
 from pydantic import PostgresDsn
 from pydantic import ValidationInfo
 from pydantic_settings import BaseSettings
@@ -42,7 +43,7 @@ class Config(BaseSettings):
     ) -> typing.Any:
         if isinstance(v, str):
             return v
-        if isinstance(v, PostgresDsn):
+        if isinstance(v, MultiHostUrl):
             return v
         return PostgresDsn.build(
             scheme="postgresql",
