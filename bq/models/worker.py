@@ -59,7 +59,7 @@ class WorkerModelMixin:
 
 class WorkerRefMixin:
     @declared_attr
-    def tasks(cls) -> Mapped["Task"]:
+    def tasks(cls) -> Mapped[list["Task"]]:
         return relationship(
             "Task",
             back_populates="worker",
