@@ -1,5 +1,5 @@
 # BeanQueue
-BeanQueue, lightweight worker queue framework based on SQLAlchemy and PostgreSQL SKIP LOCK queries
+BeanQueue, lightweight worker queue framework based on [SQLAlchemy](https://www.sqlalchemy.org/) and PostgreSQL SKIP LOCK queries
 
 ## Features
 
@@ -63,7 +63,7 @@ By doing so, you don't need to maintain another worker queue backend yet.
 You are probably using a database anyway, so this worker queue comes for free.
 
 Usually, a database is inefficient as the worker queues data storage because of the potential lock contention and the need for constant querying.
-However, things have changed since the introduction of the SKIP LOCKED and LISTEN / NOTIFY feature in PostgreSQL or other databases.
+However, things have changed since the [introduction of the SKIP LOCKED and LISTEN / NOTIFY feature in PostgreSQL](https://www.2ndquadrant.com/en/blog/what-is-select-skip-locked-for-in-postgresql-9-5/) or other databases.
 
 This project is inspired by many of the SKIP-LOCKED-based worker queue successors.
 Why don't we just use those existing tools?
