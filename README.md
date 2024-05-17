@@ -92,6 +92,7 @@ To run the worker, you can do this:
 BQ_PROCESSOR_PACKAGES='["my_pkgs.processors"]' python -m bq.cmds.process images
 ```
 
+The `BQ_PROCESSOR_PACKAGES` is a JSON list contains the Python packages where you define your processors (the functions you decorated with `bq.processors.registry.processor`).
 To submit a task for testing purpose, you can do
 
 ```bash
