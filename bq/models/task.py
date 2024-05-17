@@ -57,6 +57,8 @@ class Task(Base):
     kwargs = Column(JSONB, nullable=True)
     # Result of the task
     result = Column(JSONB, nullable=True)
+    # Error message
+    error_message = Column(String, nullable=True)
     # created datetime of the task
     created_at = Column(
         DateTime(timezone=True), nullable=False, server_default=func.now()

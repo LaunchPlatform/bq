@@ -54,12 +54,13 @@ def process_task(task: models.Task, processor: Processor):
         try:
             result = processor.func(**base_kwargs, **task.kwargs)
             savepoint.commit()
-        except Exception:
+        except Exception as exc:
             logger.error("Unhandled exception for task %s", task.id, exc_info=True)
             if processor.auto_rollback_on_exc:
                 savepoint.rollback()
             # TODO: add error event
             task.state = models.TaskState.FAILED
+            task.error_message = str(exc)
             db.add(task)
             return
     if processor.auto_complete:
@@ -92,6 +93,7 @@ class Registry:
             )
             # TODO: add error event
             task.state = models.TaskState.FAILED
+            task.error_message = f"Cannot find processor for task with module={task.module}, func={task.func_name}"
             db.add(task)
             return
         return process_task(task, processor)
