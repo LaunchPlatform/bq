@@ -17,28 +17,29 @@ class Notification:
 
 
 class DispatchService:
-    def __init__(self, session: Session):
+    def __init__(self, session: Session, task_model: typing.Type = models.Task):
         self.session = session
+        self.task_model: typing.Type[models.Task] = task_model
 
     def make_task_query(self, channels: typing.Sequence[str], limit: int = 1) -> Query:
         return (
-            self.session.query(models.Task.id)
-            .filter(models.Task.channel.in_(channels))
-            .filter(models.Task.state == models.TaskState.PENDING)
-            .order_by(models.Task.created_at)
+            self.session.query(self.task_model.id)
+            .filter(self.task_model.channel.in_(channels))
+            .filter(self.task_model.state == models.TaskState.PENDING)
+            .order_by(self.task_model.created_at)
             .limit(limit)
             .with_for_update(skip_locked=True)
         )
 
-    def make_update_query(self, task_query: typing.Any, worker_id: uuid.UUID):
+    def make_update_query(self, task_query: typing.Any, worker_id: typing.Any):
         return (
-            models.Task.__table__.update()
-            .where(models.Task.id.in_(task_query))
+            self.task_model.__table__.update()
+            .where(self.task_model.id.in_(task_query))
             .values(
                 state=models.TaskState.PROCESSING,
                 worker_id=worker_id,
             )
-            .returning(models.Task.id)
+            .returning(self.task_model.id)
         )
 
     def dispatch(
@@ -52,9 +53,11 @@ class DispatchService:
                 self.make_update_query(task_subquery, worker_id=worker_id)
             )
         ]
-        # TODO: ideally returning with (models.Task) should return the whole model, but SQLAlchemy is returning
+        # TODO: ideally returning with (self.task_model) should return the whole model, but SQLAlchemy is returning
         #       it columns in rows. We can save a round trip if we can find out how to solve this
-        return self.session.query(models.Task).filter(models.Task.id.in_(task_ids))
+        return self.session.query(self.task_model).filter(
+            self.task_model.id.in_(task_ids)
+        )
 
     def listen(self, channels: typing.Sequence[str]):
         conn = self.session.connection()

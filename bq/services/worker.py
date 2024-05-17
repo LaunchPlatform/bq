@@ -9,8 +9,15 @@ from .. import models
 
 
 class WorkerService:
-    def __init__(self, session: Session):
+    def __init__(
+        self,
+        session: Session,
+        task_model: typing.Type = models.Task,
+        worker_model: typing.Type = models.Worker,
+    ):
         self.session = session
+        self.task_model: typing.Type[models.Task] = task_model
+        self.worker_model: typing.Type[models.Worker] = worker_model
 
     def update_heartbeat(self, worker: models.Worker):
         worker.last_heartbeat = func.now()
@@ -18,24 +25,24 @@ class WorkerService:
 
     def make_dead_worker_query(self, timeout: int, limit: int = 5) -> Query:
         return (
-            self.session.query(models.Worker.id)
+            self.session.query(self.worker_model.id)
             .filter(
-                models.Worker.last_heartbeat
+                self.worker_model.last_heartbeat
                 < (func.now() - datetime.timedelta(seconds=timeout))
             )
-            .filter(models.Worker.state == models.WorkerState.RUNNING)
+            .filter(self.worker_model.state == models.WorkerState.RUNNING)
             .limit(limit)
             .with_for_update(skip_locked=True)
         )
 
     def make_update_dead_worker_query(self, worker_query: typing.Any):
         return (
-            models.Worker.__table__.update()
-            .where(models.Worker.id.in_(worker_query))
+            self.worker_model.__table__.update()
+            .where(self.worker_model.id.in_(worker_query))
             .values(
                 state=models.WorkerState.NO_HEARTBEAT,
             )
-            .returning(models.Worker.id)
+            .returning(self.worker_model.id)
         )
 
     def fetch_dead_workers(self, timeout: int, limit: int = 5) -> Query:
@@ -50,14 +57,14 @@ class WorkerService:
         # TODO: ideally returning with (models.Task) should return the whole model, but SQLAlchemy is returning
         #       it columns in rows. We can save a round trip if we can find out how to solve this
         return self.session.query(models.Worker).filter(
-            models.Worker.id.in_(worker_ids)
+            self.worker_model.id.in_(worker_ids)
         )
 
     def make_update_tasks_query(self, worker_query: typing.Any):
         return (
-            models.Task.__table__.update()
-            .where(models.Task.worker_id.in_(worker_query))
-            .where(models.Task.state == models.TaskState.PROCESSING)
+            self.task_model.__table__.update()
+            .where(self.task_model.worker_id.in_(worker_query))
+            .where(self.task_model.state == models.TaskState.PROCESSING)
             .values(
                 state=models.TaskState.PENDING,
                 worker_id=None,
