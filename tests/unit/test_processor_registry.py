@@ -108,7 +108,7 @@ def test_process_task_auto_complete(
         auto_complete=auto_complete,
     )
     assert process_task(task=task, processor=processor) == "result"
-    db.expire_all()
+    db.commit()
     assert task.state == expected_state
     assert called
 
@@ -127,7 +127,7 @@ def test_process_task_unhandled_exception(
         func=func,
     )
     process_task(task=task, processor=processor)
-    db.expire_all()
+    db.commit()
     assert task.state == models.TaskState.FAILED
 
 
@@ -156,7 +156,7 @@ def test_process_task_auto_rollback_on_exc(
         auto_rollback_on_exc=auto_rollback_on_exc,
     )
     process_task(task=task, processor=processor)
-    db.expire_all()
+    db.commit()
     assert task.state == models.TaskState.FAILED
     assert task.func_name == expected_func_name
 
