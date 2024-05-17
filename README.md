@@ -38,7 +38,7 @@ Also, if the commit step fails, you will have a failed worker queue job trying t
 Another approach is to push the resize task after the database changes are committed. It works like this:
 
 ```
-1. Insert into the `images` table
+1. Insert into the `images` table
 2. Commit db changes
 3. Push resize task to the worker queue
 ```
