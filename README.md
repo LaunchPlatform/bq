@@ -31,7 +31,7 @@ Say you push the task to the worker queue immediately after you insert the `imag
 
 While this might seem like the right way to do it, there's a hidden bug.
 If the worker starts too fast before the transaction commits at step 3, it will not be able to see the new row in `images` as it has not been committed yet.
-One may need to make the task retry a few times to ensure that even if the first attempt failed, it could see the background job row in the following attempt.
+One may need to make the task retry a few times to ensure that even if the first attempt failed, it could see the image row in the following attempt.
 But this adds complexity to the system and also increases the latency if the first attempt fails.
 Also, if the commit step fails, you will have a failed worker queue job trying to fetch a row from the database that will never exist.
 
@@ -59,11 +59,11 @@ You can simply do the following:
 ```
 
 It's all or nothing!
-By doing so, you don't need to maintain another worker queue backend yet.
+By doing so, you don't need to maintain another worker queue backend.
 You are probably using a database anyway, so this worker queue comes for free.
 
 Usually, a database is inefficient as the worker queues data storage because of the potential lock contention and the need for constant querying.
-However, things have changed since the [introduction of the SKIP LOCKED and LISTEN / NOTIFY feature in PostgreSQL](https://www.2ndquadrant.com/en/blog/what-is-select-skip-locked-for-in-postgresql-9-5/) or other databases.
+However, things have changed since the [introduction of the SKIP LOCKED](https://www.2ndquadrant.com/en/blog/what-is-select-skip-locked-for-in-postgresql-9-5/) and [LISTEN](https://www.postgresql.org/docs/current/sql-listen.html) / [NOTIFY](https://www.postgresql.org/docs/current/sql-notify.html) features in PostgreSQL or other databases.
 
 This project is inspired by many of the SKIP-LOCKED-based worker queue successors.
 Why don't we just use those existing tools?
