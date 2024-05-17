@@ -26,14 +26,13 @@ You can define a task processor like this
 ```python
 from sqlalchemy.orm import Session
 
-from bq.processors.registry import processor
-from bq import models
-from .. import my_models
+import bq
+from .. import models
 from .. import image_utils
 
-@processor(channel="images")
-def resize_image(db: Session, task: models.Task, width: int, height: int):
-    image = db.query(my_models.Image).filter(my_models.Image.task == task).one()
+@bq.processor(channel="images")
+def resize_image(db: Session, task: bq.Task, width: int, height: int):
+    image = db.query(models.Image).filter(models.Image.task == task).one()
     image_utils.resize(image, size=(width, height))
     db.add(image)
     # by default the `processor` decorator has `auto_complete` flag turns on,
@@ -47,17 +46,17 @@ To submit a task, you can either use `bq.models.Task` model object to construct 
 database session and commit.
 
 ```python
-from bq import models
+import bq
 from .db import Session
-from .. import my_models
+from .. import models
 
 db = Session()
-task = models.Task(
+task = bq.Task(
     channel="files",
     module="my_pkgs.files.processors",
     name="upload_to_s3_for_backup",
 )
-file = my_models.File(
+file = models.File(
     task=task,
     blob_name="...",
 )
@@ -118,8 +117,8 @@ For example:
 
 ```python
 import bq.cmds.process
-from bq.container import Container
-from bq.config import Config
+from bq import Container
+from bq import Config
 
 container = Container()
 container.wire(modules=[bq.cmds.process])
