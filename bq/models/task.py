@@ -1,6 +1,8 @@
+import datetime
 import enum
+import typing
+import uuid
 
-from sqlalchemy import Column
 from sqlalchemy import Connection
 from sqlalchemy import DateTime
 from sqlalchemy import Enum
@@ -11,6 +13,9 @@ from sqlalchemy import inspect
 from sqlalchemy import String
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.dialects.postgresql import UUID
+from sqlalchemy.orm import declared_attr
+from sqlalchemy.orm import Mapped
+from sqlalchemy.orm import mapped_column
 from sqlalchemy.orm import Mapper
 from sqlalchemy.orm import relationship
 
@@ -29,18 +34,12 @@ class TaskState(enum.Enum):
     FAILED = "FAILED"
 
 
-class Task(Base):
-    id = Column(
+class TaskModelMixin:
+    id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True), primary_key=True, server_default=func.gen_random_uuid()
     )
-    # foreign key id of assigned worker
-    worker_id = Column(
-        UUID(as_uuid=True),
-        ForeignKey("bq_workers.id", name="fk_workers_id"),
-        nullable=True,
-    )
     # current state of the task
-    state = Column(
+    state: Mapped[TaskState] = mapped_column(
         Enum(TaskState),
         nullable=False,
         default=TaskState.PENDING,
@@ -48,24 +47,37 @@ class Task(Base):
         index=True,
     )
     # channel for workers and job creator to listen/notify
-    channel = Column(String, nullable=False, index=True)
+    channel: Mapped[str] = mapped_column(String, nullable=False, index=True)
     # module of the processor function
-    module = Column(String, nullable=False)
+    module: Mapped[str] = mapped_column(String, nullable=False)
     # func name of the processor func
-    func_name = Column(String, nullable=False)
+    func_name: Mapped[str] = mapped_column(String, nullable=False)
     # keyword arguments
-    kwargs = Column(JSONB, nullable=True)
+    kwargs: Mapped[typing.Optional[typing.Any]] = mapped_column(JSONB, nullable=True)
     # Result of the task
-    result = Column(JSONB, nullable=True)
+    result: Mapped[typing.Optional[typing.Any]] = mapped_column(JSONB, nullable=True)
     # Error message
-    error_message = Column(String, nullable=True)
+    error_message: Mapped[typing.Optional[str]] = mapped_column(String, nullable=True)
     # created datetime of the task
-    created_at = Column(
+    created_at: Mapped[datetime.datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=func.now()
     )
 
-    worker = relationship("Worker", back_populates="tasks", uselist=False)
 
+class TaskModelRefWorkerMixin:
+    # foreign key id of assigned worker
+    worker_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("bq_workers.id", name="fk_workers_id"),
+        nullable=True,
+    )
+
+    @declared_attr
+    def worker(cls) -> Mapped["Worker"]:
+        return relationship("Worker", back_populates="tasks", uselist=False)
+
+
+class Task(TaskModelMixin, TaskModelRefWorkerMixin, Base):
     __tablename__ = "bq_tasks"
 
     def __repr__(self) -> str:

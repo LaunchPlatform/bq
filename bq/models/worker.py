@@ -1,4 +1,6 @@
+import datetime
 import enum
+import uuid
 
 from sqlalchemy import Column
 from sqlalchemy import DateTime
@@ -7,6 +9,10 @@ from sqlalchemy import func
 from sqlalchemy import String
 from sqlalchemy.dialects.postgresql import ARRAY
 from sqlalchemy.dialects.postgresql import UUID
+from sqlalchemy.orm import declared_attr
+from sqlalchemy.orm import Mapped
+from sqlalchemy.orm import mapped_column
+from sqlalchemy.orm import Mapper
 from sqlalchemy.orm import relationship
 
 from ..db.base import Base
@@ -22,12 +28,12 @@ class WorkerState(enum.Enum):
     NO_HEARTBEAT = "NO_HEARTBEAT"
 
 
-class Worker(Base):
-    id = Column(
+class WorkerModelMixin:
+    id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True), primary_key=True, server_default=func.gen_random_uuid()
     )
     # current state of the worker
-    state = Column(
+    state: Mapped[WorkerState] = mapped_column(
         Enum(WorkerState),
         nullable=False,
         default=WorkerState.RUNNING,
@@ -35,28 +41,34 @@ class Worker(Base):
         index=True,
     )
     # name of the worker
-    name = Column(String, nullable=False)
+    name: Mapped[str] = mapped_column(String, nullable=False)
     # the channels we are processing
-    channels = Column(ARRAY(String), nullable=False)
+    channels: Mapped[list[str]] = mapped_column(ARRAY(String), nullable=False)
     # last heartbeat of this worker
-    last_heartbeat = Column(
+    last_heartbeat: Mapped[datetime.datetime] = mapped_column(
         DateTime(timezone=True),
         nullable=False,
         server_default=func.now(),
         index=True,
     )
     # created datetime of the worker
-    created_at = Column(
+    created_at: Mapped[datetime.datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=func.now()
     )
 
-    tasks = relationship(
-        "Task",
-        back_populates="worker",
-        cascade="all,delete",
-        order_by="Task.created_at",
-    )
 
+class WorkerRefMixin:
+    @declared_attr
+    def tasks(cls) -> Mapped["Task"]:
+        return relationship(
+            "Task",
+            back_populates="worker",
+            cascade="all,delete",
+            order_by="Task.created_at",
+        )
+
+
+class Worker(WorkerModelMixin, WorkerRefMixin, Base):
     __tablename__ = "bq_workers"
 
     def __repr__(self) -> str:

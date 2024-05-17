@@ -82,7 +82,6 @@ def update_workers(
 def process_tasks(
     channels: tuple[str, ...],
     config: Config = Provide[Container.config],
-    session_factory: typing.Callable = Provide[Container.session_factory],
     db: DBSession = Provide[Container.session],
     dispatch_service: DispatchService = Provide[Container.dispatch_service],
     worker_service: WorkerService = Provide[Container.worker_service],
