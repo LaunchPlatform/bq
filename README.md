@@ -133,6 +133,85 @@ with container.config.override(config):
 
 Many other behaviors of this framework can also be modified by overriding the container defined at [bq/container.py](bq/container.py).
 
+### Define your own tables
+
+BeanQueue is designed to be as customizable as much as possible.
+Of course, you can define your own SQLAlchemy model instead of the ones we provided. 
+
+To make defining your own `Task` model or `Worker` model much easier, you can use our mixin classes:
+
+- `bq.TaskModelMixin`: provides task model columns
+- `bq.TaskModelRefWorkerMixin`: provides foreign key column and relationship to `bq.Worker`
+- `bq.WorkerModelMixin`: provides worker model columns
+- `bq.WorkerRefMixin`: provides relationship to `bq.Task`
+
+Here's an example for defining your own Task model:
+
+```python
+import uuid
+
+import bq
+from sqlalchemy import ForeignKey
+from sqlalchemy.dialects.postgresql import UUID
+from sqlalchemy.orm import Mapped
+from sqlalchemy.orm import mapped_column
+from sqlalchemy.orm import relationship
+
+from .base_class import Base
+
+
+class Task(bq.TaskModelMixin, Base):
+    __tablename__ = "task"
+    worker_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("worker.id", onupdate="CASCADE"),
+        nullable=True,
+        index=True,
+    )
+
+    worker: Mapped["Worker"] = relationship(
+        "Worker", back_populates="tasks", uselist=False
+    )
+```
+
+To make task insert and update with state changing to `PENDING` send out NOTIFY "channel" statement automatically, you can also use `bq.models.task.listen_events` helper to register our SQLAlchemy event handlers automatically like this
+
+```python
+from bq.models.task import listen_events
+listen_events(Task)
+```
+
+You just see how easy it is to define your Task model. Now, here's an example for defining your own Worker model:
+
+```python
+import bq
+from sqlalchemy.orm import Mapped
+from sqlalchemy.orm import relationship
+
+from .base_class import Base
+
+
+class Worker(bq.WorkerModelMixin, Base):
+    __tablename__ = "worker"
+
+    tasks: Mapped[list["Task"]] = relationship(
+        "Task",
+        back_populates="worker",
+        cascade="all,delete",
+        order_by="Task.created_at",
+    )
+```
+
+With the model class ready, you only need to change the `TASK_MODEL` and `WORKER_MODEL` of `Config` to the full Python module name plus the class name like this.
+
+```python
+import bq
+config = bq.Config(
+    TASK_MODEL="my_pkgs.models.Task",
+    WORKER_MODEL="my_pkgs.models.Worker",
+)
+```
+
 ## Why?
 
 There are countless worker queue projects. Why make yet another one?
