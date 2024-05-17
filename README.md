@@ -24,8 +24,8 @@ So, you will first need to insert a row for the uploaded image about the job int
 Say you push the task to the worker queue immediately after you insert the `images` table then commit like this:
 
 ```
-1. Insert into the `images` table
-2. Push resize task to the worker queue
+1. Insert into the "images" table
+2. Push resizing task to the worker queue
 3. Commit db changes
 ```
 
@@ -38,9 +38,9 @@ Also, if the commit step fails, you will have a failed worker queue job trying t
 Another approach is to push the resize task after the database changes are committed. It works like this:
 
 ```
-1. Insert into the `images` table
+1. Insert into the "images" table
 2. Commit db changes
-3. Push resize task to the worker queue
+3. Push resizing task to the worker queue
 ```
 
 With this approach, we don't need to worry about workers picking up the task too early.
@@ -48,6 +48,30 @@ However, there's another drawback.
 If step 3 for pushing a new task to the worker queue fails, the newly inserted `images` row will never be processed.
 There are many solutions to this problem, but these are all caused by inconsistent data views between the database and the worker queue storage.
 Things will be much easier if we have a worker queue that shares the same consistent view with the worker queue.
+
+By using a database as the data storage, all the problems are gone.
+You can simply do the following:
+
+```
+1. Insert into the "images" table
+2. Insert the image resizing task into the `tasks` table
+3. Commit db changes
+```
+
+It's all or nothing!
+By doing so, you don't need to maintain another worker queue backend yet.
+You are probably using a database anyway, so this worker queue comes for free.
+
+Usually, a database is inefficient as the worker queues data storage because of the potential lock contention and the need for constant querying.
+However, things have changed since the introduction of the SKIP LOCKED and LISTEN / NOTIFY feature in PostgreSQL or other databases.
+
+This project is inspired by many of the SKIP-LOCKED-based worker queue successors.
+Why don't we just use those existing tools?
+Well, because while they work great as worker queue solutions, they don't take advantage of writing tasks and their relative data into the database in a transaction.
+Many provide an abstraction function or gRPC method of pushing tasks into the database instead of opening it up for the user to insert the row directly with other rows and commit altogether.
+
+With BeanQueue, we don't abstract away the logic of publishing a new task into the queue.
+Instead, we open it up to let the user insert the row and choose when and what to commit to the task
 
 ## Alternatives
 
