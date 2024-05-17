@@ -36,11 +36,31 @@ def resize_image(db: Session, task: models.Task, width: int, height: int):
     db.add(image)
     # by default the `processor` decorator has `auto_complete` flag turns on,
     # so it will commit the db changes for us automatically
-
 ```
 
 To submit a task, you can either use `bq.models.Task` model object to construct the task object, insert into the
-database session and commit, or you can use the helper like this:
+database session and commit.
+
+```python
+from bq import models
+from .db import Session
+from .. import my_models
+
+task = models.Task(
+    channel="files",
+    module="my_pkgs.files.processors",
+    name="upload_to_s3_for_backup",
+)
+file = my_models.File(
+    task=task,
+    blob_name="...",
+)
+db.add(task)
+db.add(file)
+db.commit()
+```
+
+Or, you can use the helper like this:
 
 ```python
 from .processors import resize_image
@@ -53,6 +73,8 @@ task = resize_image.run(width=200, height=300)
 # associate task with your own models
 image = my_models.Image(task=task, blob_name="...")
 db.add(image)
+# we have Task model SQLALchemy event handler to send NOTIFY "<channel>" statement for you,
+# so that the workers will be woken up immediately
 db.add(task)
 # commit will make the task visible to worker immediately
 db.commit()
