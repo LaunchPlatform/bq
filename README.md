@@ -6,8 +6,63 @@ BeanQueue, lightweight worker queue framework based on [SQLAlchemy](https://www.
 - **Super lightweight**: Under 1K lines
 - **Easy-to-deploy**: Only rely on PostgreSQL
 - **Easy-to-use**: Provide command line tools for processing tasks
+- **Auto-notify**: Notify will automatically be generated and send for inserted or update tasks
+- **Worker heartbeat and auto-reschedule**: Each worker keeps updating heartbeat, if one is dead, the others will reschedule the tasks
 - **Customizable**: Use it as an library and build your own worker queue
 - **Native DB operations**: Commit your tasks with other db entries altogether without worrying about data inconsistent issue
+
+## Install
+
+```bash
+pip install beanqueue
+```
+
+## Usage
+
+You can define a task processor like this
+
+```python
+from sqlalchemy.orm import Session
+
+from bq.processors.registry import processor
+from bq import models
+from .. import my_models
+from .. import image_utils
+
+@processor(channel="images")
+def resize_image(db: Session, task: models.Task, width: int, height: int):
+    image = db.query(my_models.Image).filter(my_models.Image.task == task)
+    image_utils.resize(image, size=(width, height))
+    db.add(image)
+    # by default the `processor` decorator has `auto_complete` flag turns on,
+    # so it will commit the db changes for us automatically
+
+```
+
+To submit a task, you can either use `bg.models.Task` model object to construct the task object, insert into the
+database session and commit, or you can use the helper like this:
+
+```python
+from .processors import resize_image
+from .db import Session
+from .. import my_models
+
+db = Session()
+# a Task model generated for invoking resize_image function
+task = resize_image.run(width=200, height=300)
+# associate task with your own models
+image = my_models.Image(task=task, blob_name="...")
+db.add(image)
+db.add(task)
+# commit will make the task visible to worker immediately
+db.commit()
+```
+
+To run the worker, you can do this:
+
+```bash
+PROCESSOR_PACKAGES='["my_pkgs.processors"]' python -m bq.cmds.process images
+```
 
 ## Why?
 
