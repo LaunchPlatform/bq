@@ -121,13 +121,12 @@ from .my_config import config
 
 container = bq.Container()
 container.wire(packages=[bq])
-with container.config.override(
-    bq.Config(
-        PROCESSOR_PACKAGES=["my_pkgs.processors"],
-        DATABASE_URL=config.DATABASE_URL,
-        BATCH_SIZE=10,
-    )
-):
+config = bq.Config(
+    PROCESSOR_PACKAGES=["my_pkgs.processors"],
+    DATABASE_URL=str(config.DATABASE_URL),
+    BATCH_SIZE=10,
+)
+with container.config.override(config):
     bq.process_tasks(channels=("images",))
 ```
 
