@@ -126,5 +126,9 @@ def task_update_notify(mapper: Mapper, connection: Connection, target: Task):
     notify_if_needed(connection, target)
 
 
-event.listens_for(Task, "after_insert")(task_insert_notify)
-event.listens_for(Task, "after_update")(task_update_notify)
+def listen_events(model_cls: typing.Type):
+    event.listens_for(model_cls, "after_insert")(task_insert_notify)
+    event.listens_for(model_cls, "after_update")(task_update_notify)
+
+
+listen_events(Task)
