@@ -59,6 +59,15 @@ def update_workers(
         if found_dead_worker:
             db.commit()
 
+        if current_worker.state != models.WorkerState.RUNNING:
+            # This probably means we are somehow very slow to update the heartbeat in time, or the timeout window
+            # is set too short. It could also be the administrator update the worker state to something else than
+            # RUNNING. Regardless the reason, let's stop processing.
+            logger.warning(
+                "Current worker %s state is %s instead of running, quit processing"
+            )
+            sys.exit(0)
+
         time.sleep(heartbeat_period)
         current_worker.last_heartbeat = func.now()
         db.add(current_worker)

@@ -60,6 +60,7 @@ class WorkerService:
             .where(models.Task.state == models.TaskState.PROCESSING)
             .values(
                 state=models.TaskState.PENDING,
+                worker_id=None,
             )
         )
 
