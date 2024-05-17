@@ -209,7 +209,9 @@ import bq
 config = bq.Config(
     TASK_MODEL="my_pkgs.models.Task",
     WORKER_MODEL="my_pkgs.models.Worker",
+    # ... other configs
 )
+# Override container...
 ```
 
 ## Why?
