@@ -116,20 +116,19 @@ If you want to configure BeanQueue programmatically for the command lines, you c
 For example:
 
 ```python
-import bq.cmds.process
-from bq import Container
-from bq import Config
+import bq
+from .my_config import config
 
-container = Container()
-container.wire(modules=[bq.cmds.process])
+container = bq.Container()
+container.wire(packages=[bq])
 with container.config.override(
-    Config(
+    bq.Config(
         PROCESSOR_PACKAGES=["my_pkgs.processors"],
-        DATABASE_URL="postgresql://...",
+        DATABASE_URL=config.DATABASE_URL,
         BATCH_SIZE=10,
     )
 ):
-    bq.cmds.process.process_tasks(channels=("images",))
+    bq.process_tasks(channels=("images",))
 ```
 
 Many other behaviors of this framework can also be modified by overriding the container defined at [bq/container.py](bq/container.py).

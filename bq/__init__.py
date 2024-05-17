@@ -1,3 +1,4 @@
+from .cmds.process import process_tasks  # noqa
 from .config import Config  # noqa
 from .container import Container  # noqa
 from .models import Task  # noqa
