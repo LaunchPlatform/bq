@@ -71,7 +71,7 @@ Well, because while they work great as worker queue solutions, they don't take a
 Many provide an abstraction function or gRPC method of pushing tasks into the database instead of opening it up for the user to insert the row directly with other rows and commit altogether.
 
 With BeanQueue, we don't abstract away the logic of publishing a new task into the queue.
-Instead, we open it up to let the user insert the row and choose when and what to commit to the task
+Instead, we open it up to let the user insert the row and choose when and what to commit to the task.
 
 ## Alternatives
 
