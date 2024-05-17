@@ -210,5 +210,6 @@ A modern accounting book service based on the most popular open source version c
 
 - [solid_queue](https://github.com/rails/solid_queue)
 - [postgres-tq](https://github.com/flix-tech/postgres-tq)
+- [pq](https://github.com/malthe/pq/)
 - [PgQueuer](https://github.com/janbjorge/PgQueuer)
 - [hatchet](https://github.com/hatchet-dev/hatchet)
