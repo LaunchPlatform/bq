@@ -87,22 +87,24 @@ For now, the configurations only affect command line tools.
 If you want to configure BeanQueue programmatically for the command lines, you can override our [dependency-injector](https://python-dependency-injector.ets-labs.org/)'s container defined at [bq/container.py](bq/container.py) and call the command function manually.
 For example:
 
-```bash
+```python
 import bq.cmds.process
 from bq.container import Container
+from bq.config import Config
 
 container = Container()
 container.wire(modules=[bq.cmds.process])
 with container.config.override(
     Config(
         PROCESSOR_PACKAGES=["my_pkgs.processors"],
-        DATABASE_URL=db_url,
+        DATABASE_URL="postgresql://...",
         BATCH_SIZE=10,
     )
 ):
     bq.cmds.process.process_tasks(channels=("images",))
-
 ```
+
+Many other behaviors of this framework can also be modified by overriding the container defined at [bq/container.py](bq/container.py).
 
 ## Why?
 
