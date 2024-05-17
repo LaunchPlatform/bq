@@ -5,6 +5,9 @@ description = "BeanQueue or BQ for short, PostgreSQL SKIP LOCK based worker queu
 authors = ["Fang-Pen Lin <fangpen@launchplatform.com>"]
 license = "MIT"
 readme = "README.md"
+packages = [
+    { include = "bq" },
+]
 
 [tool.poetry.dependencies]
 python = "^3.11"
