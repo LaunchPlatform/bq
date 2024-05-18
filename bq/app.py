@@ -9,18 +9,21 @@ import typing
 
 import venusian
 from sqlalchemy import func
+from sqlalchemy.engine import create_engine
+from sqlalchemy.engine import Engine
 from sqlalchemy.orm import Session as DBSession
+from sqlalchemy.pool import SingletonThreadPool
 
 from . import constants
 from . import models
 from .config import Config
-from .db.session import Session
+from .db.session import SessionMaker
 from .processors.processor import Processor
 from .processors.processor import ProcessorHelper
 from .processors.registry import collect
 from .services.dispatch import DispatchService
 from .services.worker import WorkerService
-from .utils import get_model_class
+from .utils import load_module_var
 
 logger = logging.getLogger(__name__)
 
@@ -29,16 +32,25 @@ class BeanQueue:
     def __init__(
         self,
         config: Config | None = None,
-        session_cls: DBSession = Session,
+        session_cls: DBSession = SessionMaker,
         worker_service_cls: typing.Type[WorkerService] = WorkerService,
         dispatch_service_cls: typing.Type[DispatchService] = DispatchService,
+        engine: Engine | None = None,
     ):
         self.config = config if config is not None else Config()
-        self.task_model = get_model_class(self.config.TASK_MODEL)
-        self.worker_model = get_model_class(self.config.WORKER_MODEL)
+        self.task_model = load_module_var(self.config.TASK_MODEL)
+        self.worker_model = load_module_var(self.config.WORKER_MODEL)
         self.session_cls = session_cls
         self.worker_service_cls = worker_service_cls
         self.dispatch_service_cls = dispatch_service_cls
+        if engine is None:
+            engine = self.create_default_engine()
+        self.engine = engine
+
+    def create_default_engine(self):
+        return create_engine(
+            str(self.config.DATABASE_URL), poolclass=SingletonThreadPool
+        )
 
     def _make_worker_service(self, session: DBSession):
         return self.worker_service_cls(
@@ -85,12 +97,12 @@ class BeanQueue:
         self,
         worker_id: typing.Any,
     ):
-        db = self.session_cls()
+        db = self.session_cls(bind=self.engine)
 
-        worker_service = self._make_dispatch_service(db)
+        worker_service = self._make_worker_service(db)
         dispatch_service = self._make_dispatch_service(db)
 
-        current_worker = self.worker_service_cls.get_worker(worker_id)
+        current_worker = worker_service.get_worker(worker_id)
         logger.info(
             "Updating worker %s with heartbeat_period=%s, heartbeat_timeout=%s",
             current_worker.id,
@@ -98,10 +110,10 @@ class BeanQueue:
             self.config.WORKER_HEARTBEAT_TIMEOUT,
         )
         while True:
-            dead_workers = self.worker_service_cls.fetch_dead_workers(
+            dead_workers = worker_service.fetch_dead_workers(
                 timeout=self.config.WORKER_HEARTBEAT_TIMEOUT
             )
-            task_count = self.worker_service_cls.reschedule_dead_tasks(
+            task_count = worker_service.reschedule_dead_tasks(
                 # TODO: a better way to abstract this?
                 dead_workers.with_entities(current_worker.__class__.id)
             )
@@ -137,7 +149,7 @@ class BeanQueue:
         self,
         channels: tuple[str, ...],
     ):
-        db = self.session_cls()
+        db = self.session_cls(bind=self.engine)
         if not channels:
             channels = [constants.DEFAULT_CHANNEL]
 

@@ -12,7 +12,7 @@ from .config import Config
 from .db.session import SessionMaker
 from .services.dispatch import DispatchService
 from .services.worker import WorkerService
-from .utils import get_model_class
+from .utils import load_module_var
 
 
 def make_db_engine(config: Config) -> Engine:
@@ -28,14 +28,14 @@ def make_session(factory: typing.Callable) -> DBSession:
 
 
 def make_dispatch_service(config: Config, session: DBSession) -> DispatchService:
-    return DispatchService(session, task_model=get_model_class(config.TASK_MODEL))
+    return DispatchService(session, task_model=load_module_var(config.TASK_MODEL))
 
 
 def make_worker_service(config: Config, session: DBSession) -> WorkerService:
     return WorkerService(
         session,
-        task_model=get_model_class(config.TASK_MODEL),
-        worker_model=get_model_class(config.WORKER_MODEL),
+        task_model=load_module_var(config.TASK_MODEL),
+        worker_model=load_module_var(config.WORKER_MODEL),
     )
 
 
