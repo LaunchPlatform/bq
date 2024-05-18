@@ -1,25 +1,26 @@
 import logging
 
 import click
-from dependency_injector.wiring import inject
-from dependency_injector.wiring import Provide
-from sqlalchemy.engine import Engine
 
 from .. import models  # noqa
-from ..container import Container
 from ..db.base import Base
+from .utils import load_app
+
+logger = logging.getLogger(__name__)
 
 
 @click.command()
-@inject
-def main(engine: Engine = Provide[Container.db_engine]):
-    logger = logging.getLogger(__name__)
-    Base.metadata.create_all(bind=engine)
+@click.option(
+    "-a", "--app", type=str, help='BeanQueue app object to use, e.g. "my_pkgs.bq.app"'
+)
+def main(
+    app: str | None = None,
+):
+    app = load_app(app)
+    Base.metadata.create_all(bind=app.engine)
     logger.info("Done, tables created")
 
 
 if __name__ == "__main__":
     logging.basicConfig(level=logging.INFO)
-    container = Container()
-    container.wire(modules=[__name__])
     main()

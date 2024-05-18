@@ -2,12 +2,11 @@ import json
 import logging
 
 import click
-from dependency_injector.wiring import inject
-from dependency_injector.wiring import Provide
 
 from .. import models
-from ..container import Container
-from ..db.session import Session
+from .utils import load_app
+
+logger = logging.getLogger(__name__)
 
 
 @click.command()
@@ -17,15 +16,18 @@ from ..db.session import Session
 @click.option(
     "-k", "--kwargs", type=str, help="Keyword arguments as JSON", default=None
 )
-@inject
+@click.option(
+    "-a", "--app", type=str, help='BeanQueue app object to use, e.g. "my_pkgs.bq.app"'
+)
 def main(
     channel: str,
     module: str,
     func: str,
     kwargs: str | None,
-    db: Session = Provide[Container.session],
+    app: str | None = None,
 ):
-    logger = logging.getLogger(__name__)
+    app = load_app(app)
+    db = app.session_cls(bind=app.create_default_engine())
 
     logger.info(
         "Submit task with channel=%s, module=%s, func=%s", channel, module, func
@@ -43,6 +45,4 @@ def main(
 
 if __name__ == "__main__":
     logging.basicConfig(level=logging.INFO)
-    container = Container()
-    container.wire(modules=[__name__])
     main()

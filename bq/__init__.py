@@ -1,6 +1,5 @@
 from .app import BeanQueue
 from .config import Config  # noqa
-from .container import Container  # noqa
 from .models import Task  # noqa
 from .models import TaskModelMixin
 from .models import TaskModelRefWorkerMixin

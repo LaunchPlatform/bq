@@ -2,8 +2,7 @@ import logging
 
 import click
 
-from ..app import BeanQueue
-from ..utils import load_module_var
+from .utils import load_app
 
 
 @click.command()
@@ -15,10 +14,7 @@ def main(
     channels: tuple[str, ...],
     app: str | None = None,
 ):
-    if app is None:
-        app = BeanQueue()
-    else:
-        app: BeanQueue = load_module_var(app)
+    app = load_app(app)
     app.process_tasks(channels)
 
 

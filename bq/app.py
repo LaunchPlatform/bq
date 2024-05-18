@@ -48,6 +48,9 @@ class BeanQueue:
             str(self.config.DATABASE_URL), poolclass=SingletonThreadPool
         )
 
+    def make_session(self) -> DBSession:
+        return self.session_cls(bind=self.engine)
+
     @property
     def engine(self) -> Engine:
         if self._engine is None:
@@ -107,7 +110,7 @@ class BeanQueue:
         self,
         worker_id: typing.Any,
     ):
-        db = self.session_cls(bind=self.engine)
+        db = self.make_session()
 
         worker_service = self._make_worker_service(db)
         dispatch_service = self._make_dispatch_service(db)
@@ -159,7 +162,7 @@ class BeanQueue:
         self,
         channels: tuple[str, ...],
     ):
-        db = self.session_cls(bind=self.engine)
+        db = self.make_session()
         if not channels:
             channels = [constants.DEFAULT_CHANNEL]
 
