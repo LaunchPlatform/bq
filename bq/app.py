@@ -15,6 +15,7 @@ from sqlalchemy.orm import Session as DBSession
 from sqlalchemy.pool import SingletonThreadPool
 
 from . import constants
+from . import events
 from . import models
 from .config import Config
 from .db.session import SessionMaker
@@ -194,6 +195,8 @@ class BeanQueue:
         db.commit()
 
         logger.info("Created worker %s, name=%s", worker.id, worker.name)
+        events.worker_init.send(self, worker=worker)
+
         logger.info("Processing tasks in channels = %s ...", channels)
 
         worker_update_thread = threading.Thread(

@@ -16,6 +16,7 @@ venusian = "^3.1.0"
 click = "^8.1.7"
 pydantic-settings = "^2.2.1"
 pg-activity = "^3.5.1"
+blinker = "^1.8.2"
 
 
 [tool.poetry.group.dev.dependencies]
