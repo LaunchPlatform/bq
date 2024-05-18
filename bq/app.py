@@ -179,7 +179,7 @@ class BeanQueue:
             for module, func_processors in module_processors.items():
                 for processor in func_processors.values():
                     logger.info(
-                        "  Processor module %r, processor %r", module, processor.name
+                        "  Processor module=%r, name=%r", module, processor.name
                     )
 
         dispatch_service = self.dispatch_service_cls(
