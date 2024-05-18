@@ -1,7 +1,7 @@
 import pytest
 from sqlalchemy.orm import Session
 
-from ..factories import TaskFactory
+from ...factories import TaskFactory
 from bq import models
 from bq.services.dispatch import DispatchService
 

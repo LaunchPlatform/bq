@@ -4,8 +4,8 @@ import pytest
 from sqlalchemy import func
 from sqlalchemy.orm import Session
 
-from ..factories import TaskFactory
-from ..factories import WorkerFactory
+from ...factories import TaskFactory
+from ...factories import WorkerFactory
 from bq import models
 from bq.services.worker import WorkerService
 
