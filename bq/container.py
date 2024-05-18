@@ -1,5 +1,4 @@
 import functools
-import importlib
 import typing
 
 from dependency_injector import containers
@@ -13,12 +12,7 @@ from .config import Config
 from .db.session import SessionMaker
 from .services.dispatch import DispatchService
 from .services.worker import WorkerService
-
-
-def get_model_class(name: str) -> typing.Type:
-    module_name, model_name = name.rsplit(".", 1)
-    module = importlib.import_module(module_name)
-    return getattr(module, model_name)
+from .utils import get_model_class
 
 
 def make_db_engine(config: Config) -> Engine:

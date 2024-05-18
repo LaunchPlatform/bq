@@ -5,9 +5,9 @@ from sqlalchemy.orm import Session
 
 from . import fixtures
 from bq import models
+from bq.processors.processor import Processor
 from bq.processors.registry import collect
 from bq.processors.registry import process_task
-from bq.processors.registry import Processor
 from bq.processors.registry import Registry
 
 
