@@ -38,19 +38,29 @@ class BeanQueue:
         engine: Engine | None = None,
     ):
         self.config = config if config is not None else Config()
-        self.task_model = load_module_var(self.config.TASK_MODEL)
-        self.worker_model = load_module_var(self.config.WORKER_MODEL)
         self.session_cls = session_cls
         self.worker_service_cls = worker_service_cls
         self.dispatch_service_cls = dispatch_service_cls
-        if engine is None:
-            engine = self.create_default_engine()
-        self.engine = engine
+        self._engine = engine
 
     def create_default_engine(self):
         return create_engine(
             str(self.config.DATABASE_URL), poolclass=SingletonThreadPool
         )
+
+    @property
+    def engine(self) -> Engine:
+        if self._engine is None:
+            self._engine = self.create_default_engine()
+        return self._engine
+
+    @property
+    def task_model(self) -> typing.Type[models.Task]:
+        return load_module_var(self.config.TASK_MODEL)
+
+    @property
+    def worker_model(self) -> typing.Type[models.Worker]:
+        return load_module_var(self.config.WORKER_MODEL)
 
     def _make_worker_service(self, session: DBSession):
         return self.worker_service_cls(

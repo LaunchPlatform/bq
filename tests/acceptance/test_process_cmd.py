@@ -4,23 +4,18 @@ from multiprocessing import Process
 
 from sqlalchemy.orm import Session
 
-import bq.cmds.process
+from .fixtures.processors import app
 from .fixtures.processors import sum
 from bq import models
 from bq.config import Config
-from bq.container import Container
 
 
 def run_process_cmd(db_url: str):
-    container = Container()
-    container.wire(modules=[bq.cmds.process])
-    with container.config.override(
-        Config(
-            PROCESSOR_PACKAGES=["tests.acceptance.fixtures.processors"],
-            DATABASE_URL=db_url,
-        )
-    ):
-        bq.cmds.process.process_tasks(channels=("acceptance-tests",))
+    app.config = Config(
+        PROCESSOR_PACKAGES=["tests.acceptance.fixtures.processors"],
+        DATABASE_URL=db_url,
+    )
+    app.process_tasks(channels=("acceptance-tests",))
 
 
 def test_process_cmd(db: Session, db_url: str):
