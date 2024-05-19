@@ -30,7 +30,9 @@ import bq
 from .. import models
 from .. import image_utils
 
-@bq.processor(channel="images")
+app = bq.BeanQueue()
+
+@app.processor(channel="images")
 def resize_image(db: Session, task: bq.Task, width: int, height: int):
     image = db.query(models.Image).filter(models.Image.task == task).one()
     image_utils.resize(image, size=(width, height))
@@ -41,6 +43,7 @@ def resize_image(db: Session, task: bq.Task, width: int, height: int):
 
 The `db` and `task` keyword arguments are optional.
 If you don't need to access the task object, you can simply define the function without these two parameters.
+We also provide an optional `savepoint` argument in case if you want to database rollback changes you made.
 
 To submit a task, you can either use `bq.Task` model object to construct the task object, insert into the
 database session and commit.
@@ -110,14 +113,12 @@ Configurations can be modified by setting environment variables with `BQ_` prefi
 For example, to set the python packages to scan for processors, you can set `BQ_PROCESSOR_PACKAGES`.
 To change the PostgreSQL database to connect to, you can set `BQ_DATABASE_URL`.
 The complete definition of configurations can be found at the [bq/config.py](bq/config.py) module.
-For now, the configurations only affect command line tools.
 
-If you want to configure BeanQueue programmatically for the command lines, you can override our [dependency-injector](https://python-dependency-injector.ets-labs.org/)'s container defined at [bq/container.py](bq/container.py) and call the command function manually.
+If you want to configure BeanQueue programmatically, you can pass in `Config` object to the `bq.BeanQueue` object when creating.
 For example:
 
 ```python
 import bq
-from bq.cmds.process import process_tasks
 from .my_config import config
 
 container = bq.Container()
@@ -127,11 +128,20 @@ config = bq.Config(
     DATABASE_URL=str(config.DATABASE_URL),
     BATCH_SIZE=10,
 )
-with container.config.override(config):
-    process_tasks(channels=("images",))
+app = bq.BeanQueue(config=config)
 ```
 
-Many other behaviors of this framework can also be modified by overriding the container defined at [bq/container.py](bq/container.py).
+Then you can pass `--app` argument pointing to the app object to the process command like this:
+
+```bash
+python -m bq.cmds.process -a my_pkgs.bq.app images
+```
+
+Or if you prefer to define your own process command, you can also call `process_tasks` of the `BeanQueue` object directly like this:
+
+```python
+app.process_tasks(channels=("images",))
+```
 
 ### Define your own tables
 
@@ -211,7 +221,7 @@ config = bq.Config(
     WORKER_MODEL="my_pkgs.models.Worker",
     # ... other configs
 )
-# Override container...
+app = bq.BeanQueue(config)
 ```
 
 ## Why?
