@@ -2,7 +2,6 @@ import datetime
 import enum
 import uuid
 
-from sqlalchemy import Column
 from sqlalchemy import DateTime
 from sqlalchemy import Enum
 from sqlalchemy import func
@@ -12,7 +11,6 @@ from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import declared_attr
 from sqlalchemy.orm import Mapped
 from sqlalchemy.orm import mapped_column
-from sqlalchemy.orm import Mapper
 from sqlalchemy.orm import relationship
 
 from ..db.base import Base
