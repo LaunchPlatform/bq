@@ -152,7 +152,9 @@ class BeanQueue:
                 # is set too short. It could also be the administrator update the worker state to something else than
                 # RUNNING. Regardless the reason, let's stop processing.
                 logger.warning(
-                    "Current worker %s state is %s instead of running, quit processing"
+                    "Current worker %s state is %s instead of running, quit processing",
+                    current_worker.id,
+                    current_worker.state,
                 )
                 sys.exit(0)
 
