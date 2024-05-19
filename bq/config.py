@@ -30,6 +30,15 @@ class Config(BaseSettings):
     # which worker model to use
     WORKER_MODEL: str = "bq.Worker"
 
+    # Enable metrics HTTP server
+    METRICS_HTTP_SERVER_ENABLED: bool = True
+
+    # the metrics http server interface to listen
+    METRICS_HTTP_SERVER_INTERFACE: str = ""
+
+    # the metrics http server port to listen
+    METRICS_HTTP_SERVER_PORT: int = 8000
+
     POSTGRES_SERVER: str = "localhost"
     POSTGRES_USER: str = "bq"
     POSTGRES_PASSWORD: str = ""

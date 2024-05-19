@@ -1,11 +1,13 @@
 import functools
 import importlib
+import json
 import logging
 import platform
 import sys
 import threading
 import time
 import typing
+from wsgiref.simple_server import make_server
 
 import venusian
 from sqlalchemy import func
@@ -159,6 +161,61 @@ class BeanQueue:
             db.add(current_worker)
             db.commit()
 
+    def _serve_http_request(
+        self, worker_id: typing.Any, environ: dict, start_response: typing.Callable
+    ) -> list[bytes]:
+        path = environ["PATH_INFO"]
+        if path == "/healthz":
+            db = self.make_session()
+            worker_service = self._make_worker_service(db)
+            worker = worker_service.get_worker(worker_id)
+            if worker is not None and worker.state == models.WorkerState.RUNNING:
+                start_response(
+                    "200 OK",
+                    [
+                        ("Content-Type", "application/json"),
+                    ],
+                )
+                return [
+                    json.dumps(dict(status="ok", worker_id=str(worker_id))).encode(
+                        "utf8"
+                    )
+                ]
+            else:
+                logger.warning("Bad worker %s state %s", worker_id, worker.state)
+                start_response(
+                    "500 Internal Server Error",
+                    [
+                        ("Content-Type", "application/json"),
+                    ],
+                )
+                return [
+                    json.dumps(
+                        dict(
+                            status="internal error",
+                            worker_id=str(worker_id),
+                            state=str(worker.state),
+                        )
+                    ).encode("utf8")
+                ]
+        # TODO: add other metrics endpoints
+        start_response(
+            "404 NOT FOUND",
+            [
+                ("Content-Type", "application/json"),
+            ],
+        )
+        return [json.dumps(dict(status="not found")).encode("utf8")]
+
+    def run_metrics_http_server(self, worker_id: typing.Any):
+        host = self.config.METRICS_HTTP_SERVER_INTERFACE
+        port = self.config.METRICS_HTTP_SERVER_PORT
+        with make_server(
+            host, port, functools.partial(self._serve_http_request, worker_id)
+        ) as httpd:
+            logger.info("Run metrics HTTP server on %s:%s", host, port)
+            httpd.serve_forever()
+
     def process_tasks(
         self,
         channels: tuple[str, ...],
@@ -193,6 +250,15 @@ class BeanQueue:
         db.add(worker)
         dispatch_service.listen(channels)
         db.commit()
+
+        metrics_server_thread = None
+        if self.config.METRICS_HTTP_SERVER_ENABLED:
+            metrics_server_thread = threading.Thread(
+                target=self.run_metrics_http_server,
+                args=(worker.id,),
+            )
+            metrics_server_thread.daemon = True
+            metrics_server_thread.start()
 
         logger.info("Created worker %s, name=%s", worker.id, worker.name)
         events.worker_init.send(self, worker=worker)
@@ -249,6 +315,8 @@ class BeanQueue:
             db.rollback()
             logger.info("Shutting down ...")
             worker_update_thread.join(5)
+            if metrics_server_thread is not None:
+                metrics_server_thread.join(5)
 
         worker.state = models.WorkerState.SHUTDOWN
         db.add(worker)
