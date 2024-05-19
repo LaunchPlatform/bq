@@ -131,7 +131,7 @@ config = bq.Config(
 app = bq.BeanQueue(config=config)
 ```
 
-Then you can pass `--app` argument pointing to the app object to the process command like this:
+Then you can pass `--app` argument (or `-a` for short) pointing to the app object to the process command like this:
 
 ```bash
 python -m bq.cmds.process -a my_pkgs.bq.app images
