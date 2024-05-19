@@ -5,6 +5,7 @@ import typing
 
 from sqlalchemy.orm import object_session
 
+from .. import events
 from .. import models
 
 logger = logging.getLogger(__name__)
@@ -36,6 +37,7 @@ class Processor:
                 result = self.func(**base_kwargs, **task.kwargs)
             except Exception as exc:
                 logger.error("Unhandled exception for task %s", task.id, exc_info=True)
+                events.task_failure.send(self, task=task, exception=exc)
                 if self.auto_rollback_on_exc:
                     savepoint.rollback()
                 # TODO: add error event
