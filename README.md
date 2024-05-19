@@ -262,7 +262,7 @@ With this approach, we don't need to worry about workers picking up the task too
 However, there's another drawback.
 If step 3 for pushing a new task to the work queue fails, the newly inserted `images` row will never be processed.
 There are many solutions to this problem, but these are all caused by inconsistent data views between the database and the work queue storage.
-Things will be much easier if we have a work queue that shares the same consistent view with the work queue.
+Things will be much easier if we have a work queue that shares the same consistent view with the database.
 
 By using a database as the data storage, all the problems are gone.
 You can simply do the following:
