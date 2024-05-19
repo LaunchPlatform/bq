@@ -299,6 +299,8 @@ A modern accounting book service based on the most popular open source version c
 ## Alternatives
 
 - [solid_queue](https://github.com/rails/solid_queue)
+- [good_job](https://github.com/bensheldon/good_job)
+- [graphile-worker](https://github.com/graphile/worker)
 - [postgres-tq](https://github.com/flix-tech/postgres-tq)
 - [pq](https://github.com/malthe/pq/)
 - [PgQueuer](https://github.com/janbjorge/PgQueuer)
