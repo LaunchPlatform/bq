@@ -39,6 +39,9 @@ class Config(BaseSettings):
     # the metrics http server port to listen
     METRICS_HTTP_SERVER_PORT: int = 8000
 
+    # default log level for metrics http server
+    METRICS_HTTP_SERVER_LOG_LEVEL: int = 30
+
     POSTGRES_SERVER: str = "localhost"
     POSTGRES_USER: str = "bq"
     POSTGRES_PASSWORD: str = ""

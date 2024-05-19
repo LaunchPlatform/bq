@@ -8,6 +8,7 @@ import threading
 import time
 import typing
 from wsgiref.simple_server import make_server
+from wsgiref.simple_server import WSGIRequestHandler
 
 import venusian
 from sqlalchemy import func
@@ -29,6 +30,21 @@ from .services.worker import WorkerService
 from .utils import load_module_var
 
 logger = logging.getLogger(__name__)
+
+
+class WSGIRequestHandlerWithLogger(WSGIRequestHandler):
+    logger = logging.getLogger("metrics_server")
+
+    def log_message(self, format, *args):
+        message = format % args
+        self.logger.info(
+            "%s - - [%s] %s\n"
+            % (
+                self.address_string(),
+                self.log_date_time_string(),
+                message.translate(self._control_char_table),
+            )
+        )
 
 
 class BeanQueue:
@@ -213,7 +229,10 @@ class BeanQueue:
         host = self.config.METRICS_HTTP_SERVER_INTERFACE
         port = self.config.METRICS_HTTP_SERVER_PORT
         with make_server(
-            host, port, functools.partial(self._serve_http_request, worker_id)
+            host,
+            port,
+            functools.partial(self._serve_http_request, worker_id),
+            handler_class=WSGIRequestHandlerWithLogger,
         ) as httpd:
             logger.info("Run metrics HTTP server on %s:%s", host, port)
             httpd.serve_forever()
@@ -255,6 +274,9 @@ class BeanQueue:
 
         metrics_server_thread = None
         if self.config.METRICS_HTTP_SERVER_ENABLED:
+            WSGIRequestHandlerWithLogger.logger.setLevel(
+                self.config.METRICS_HTTP_SERVER_LOG_LEVEL
+            )
             metrics_server_thread = threading.Thread(
                 target=self.run_metrics_http_server,
                 args=(worker.id,),
