@@ -125,7 +125,7 @@ container = bq.Container()
 container.wire(packages=[bq])
 config = bq.Config(
     PROCESSOR_PACKAGES=["my_pkgs.processors"],
-    DATABASE_URL=str(config.DATABASE_URL),
+    DATABASE_URL=config.DATABASE_URL,
     BATCH_SIZE=10,
 )
 app = bq.BeanQueue(config=config)
