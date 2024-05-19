@@ -85,6 +85,8 @@ class Task(TaskModelMixin, TaskModelRefWorkerMixin, Base):
             ("id", self.id),
             ("state", self.state),
             ("channel", self.channel),
+            ("module", self.module),
+            ("func_name", self.func_name),
         ]
         return f"<{self.__class__.__name__} {make_repr_attrs(items)}>"
 
