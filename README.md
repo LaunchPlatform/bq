@@ -43,7 +43,7 @@ def resize_image(db: Session, task: bq.Task, width: int, height: int):
 
 The `db` and `task` keyword arguments are optional.
 If you don't need to access the task object, you can simply define the function without these two parameters.
-We also provide an optional `savepoint` argument in case if you want to database rollback changes you made.
+We also provide an optional `savepoint` argument in case if you want to rollback database changes you made.
 
 To submit a task, you can either use `bq.Task` model object to construct the task object, insert into the
 database session and commit.
