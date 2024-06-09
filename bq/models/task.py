@@ -24,7 +24,7 @@ from .helpers import make_repr_attrs
 
 
 class TaskState(enum.Enum):
-    # task just created, not scheduled yet
+    # task just created, not dispatched yet. or, the task failed and is waiting for a retry.
     PENDING = "PENDING"
     # a worker is processing the task right now
     PROCESSING = "PROCESSING"
@@ -82,7 +82,13 @@ class TaskModelRefWorkerMixin:
         return relationship("Worker", back_populates="tasks", uselist=False)
 
 
-class Task(TaskModelMixin, TaskModelRefWorkerMixin, Base):
+class TaskModelRefEventMixin:
+    @declared_attr
+    def events(cls) -> Mapped["Event"]:
+        return relationship("Event", back_populates="task")
+
+
+class Task(TaskModelMixin, TaskModelRefWorkerMixin, TaskModelRefEventMixin, Base):
     __tablename__ = "bq_tasks"
 
     def __repr__(self) -> str:
