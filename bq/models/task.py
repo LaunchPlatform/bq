@@ -82,13 +82,42 @@ class TaskModelRefWorkerMixin:
         return relationship("Worker", back_populates="tasks", uselist=False)
 
 
+class TaskModelRefParentMixin:
+    # foreign key id of the source task which created the current task while we are processing it
+    parent_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("bq_tasks.id", name="fk_task_parent_task_id"),
+        nullable=True,
+    )
+
+    @declared_attr
+    def parent(cls) -> Mapped[typing.Optional["Task"]]:
+        return relationship(
+            "Task",
+            back_populates="children",
+            remote_side=[cls.id],
+            foreign_keys=[cls.parent_id],
+            uselist=False,
+        )
+
+    @declared_attr
+    def children(cls) -> Mapped[list["Task"]]:
+        return relationship("Task", foreign_keys=[cls.parent_id])
+
+
 class TaskModelRefEventMixin:
     @declared_attr
     def events(cls) -> Mapped["Event"]:
         return relationship("Event", back_populates="task")
 
 
-class Task(TaskModelMixin, TaskModelRefWorkerMixin, TaskModelRefEventMixin, Base):
+class Task(
+    TaskModelMixin,
+    TaskModelRefWorkerMixin,
+    TaskModelRefEventMixin,
+    TaskModelRefParentMixin,
+    Base,
+):
     __tablename__ = "bq_tasks"
 
     def __repr__(self) -> str:
