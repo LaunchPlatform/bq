@@ -4,6 +4,8 @@ import typing
 import uuid
 
 from sqlalchemy import func
+from sqlalchemy import null
+from sqlalchemy import or_
 from sqlalchemy.orm import Query
 
 from .. import models
@@ -32,7 +34,12 @@ class DispatchService:
             self.session.query(self.task_model.id)
             .filter(self.task_model.channel.in_(channels))
             .filter(self.task_model.state == models.TaskState.PENDING)
-            .filter(now >= self.task_model.scheduled_at)
+            .filter(
+                or_(
+                    self.task_model.scheduled_at.is_(null()),
+                    now >= self.task_model.scheduled_at,
+                )
+            )
             .order_by(self.task_model.created_at)
             .limit(limit)
             .with_for_update(skip_locked=True)
