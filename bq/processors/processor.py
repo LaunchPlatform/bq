@@ -24,7 +24,7 @@ class Processor:
     # should we auto rollback the transaction when encounter unhandled exception
     auto_rollback_on_exc: bool = True
 
-    def process(self, task: models.Task):
+    def process(self, task: models.Task, event_cls: typing.Type | None = None):
         ctx_token = current_task.set(task)
         try:
             db = object_session(task)
@@ -46,15 +46,28 @@ class Processor:
                     events.task_failure.send(self, task=task, exception=exc)
                     if self.auto_rollback_on_exc:
                         savepoint.rollback()
-                    # TODO: add error event
                     task.state = models.TaskState.FAILED
                     task.error_message = str(exc)
+                    # TODO: call retry policy here
+                    if event_cls is not None:
+                        event = event_cls(
+                            task=task,
+                            type=models.EventType.FAILED,
+                            error_message=task.error_message,
+                        )
+                        db.add(event)
                     db.add(task)
                     return
             if self.auto_complete:
                 logger.info("Task %s auto complete", task.id)
                 task.state = models.TaskState.DONE
                 task.result = result
+                if event_cls is not None:
+                    event = event_cls(
+                        task=task,
+                        type=models.EventType.COMPLETE,
+                    )
+                    db.add(event)
                 db.add(task)
             return result
         finally:

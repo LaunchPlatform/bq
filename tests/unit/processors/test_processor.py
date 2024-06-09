@@ -59,6 +59,30 @@ def test_process_task_auto_complete(
     assert called
 
 
+def test_process_task_events(
+    db: Session,
+    task: models.Task,
+):
+    def func():
+        return "result"
+
+    processor = Processor(
+        channel="mock-channel",
+        module="mock.module",
+        name="my_func",
+        func=func,
+        auto_complete=True,
+    )
+    assert processor.process(task=task, event_cls=models.Event) == "result"
+    db.commit()
+    db.expire_all()
+    assert len(task.events) == 1
+    event = task.events[0]
+    assert event.type == models.EventType.COMPLETE
+    assert event.error_message is None
+    assert event.scheduled_at is None
+
+
 def test_process_task_unhandled_exception(
     db: Session,
     task: models.Task,

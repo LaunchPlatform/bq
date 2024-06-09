@@ -109,7 +109,7 @@ class TaskModelRefParentMixin:
 
 class TaskModelRefEventMixin:
     @declared_attr
-    def events(cls) -> Mapped["Event"]:
+    def events(cls) -> Mapped[list["Event"]]:
         return relationship("Event", back_populates="task")
 
 

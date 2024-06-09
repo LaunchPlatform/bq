@@ -1,7 +1,13 @@
 from .app import BeanQueue
 from .config import Config  # noqa
+from .models import Event
+from .models import EventModelMixin
+from .models import EventModelRefTaskMixin
+from .models import EventType
 from .models import Task  # noqa
 from .models import TaskModelMixin
+from .models import TaskModelRefEventMixin
+from .models import TaskModelRefParentMixin
 from .models import TaskModelRefWorkerMixin
 from .models import TaskState  # noqa
 from .models import Worker  # noqa

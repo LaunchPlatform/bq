@@ -22,7 +22,7 @@ class EventType(enum.Enum):
     # task failed
     FAILED = "FAILED"
     # task failed and retry scheduled
-    RETRY_SCHEDULED = "RETRY_SCHEDULED"
+    FAILED_RETRY_SCHEDULED = "FAILED_RETRY_SCHEDULED"
     # task complete
     COMPLETE = "COMPLETE"
 

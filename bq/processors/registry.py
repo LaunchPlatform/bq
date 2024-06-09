@@ -18,10 +18,12 @@ class Registry:
     def add(self, processor: Processor):
         self.processors[processor.channel][processor.module][processor.name] = processor
 
-    def process(self, task: models.Task) -> typing.Any:
+    def process(
+        self, task: models.Task, event_cls: typing.Type | None = models.Event
+    ) -> typing.Any:
         modules = self.processors.get(task.channel, {})
         functions = modules.get(task.module, {})
-        processor = functions.get(task.func_name)
+        processor: Processor = functions.get(task.func_name)
         db = object_session(task)
         if processor is None:
             self.logger.error(
@@ -30,9 +32,15 @@ class Registry:
                 task.module,
                 task.func_name,
             )
-            # TODO: add error event
             task.state = models.TaskState.FAILED
             task.error_message = f"Cannot find processor for task with module={task.module}, func={task.func_name}"
+            if event_cls is not None:
+                event = event_cls(
+                    task=task,
+                    type=models.EventType.FAILED,
+                    error_message=task.error_message,
+                )
+                db.add(event)
             db.add(task)
             return
         return processor.process(task)

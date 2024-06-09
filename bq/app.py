@@ -84,6 +84,12 @@ class BeanQueue:
     def worker_model(self) -> typing.Type[models.Worker]:
         return load_module_var(self.config.WORKER_MODEL)
 
+    @property
+    def event_model(self) -> typing.Type[models.Event] | None:
+        if self.config.EVENT_MODEL is None:
+            return
+        return load_module_var(self.config.EVENT_MODEL)
+
     def _make_worker_service(self, session: DBSession):
         return self.worker_service_cls(
             session=session, task_model=self.task_model, worker_model=self.worker_model
@@ -318,7 +324,7 @@ class BeanQueue:
                             task.func_name,
                         )
                         # TODO: support processor pool and other approaches to dispatch the workload
-                        registry.process(task)
+                        registry.process(task, event_cls=self.event_model)
                     if not tasks:
                         # we should try to keep dispatching until we cannot find tasks
                         break

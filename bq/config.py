@@ -30,6 +30,9 @@ class Config(BaseSettings):
     # which worker model to use
     WORKER_MODEL: str = "bq.Worker"
 
+    # which event model to use
+    EVENT_MODEL: str | None = "bq.Event"
+
     # Enable metrics HTTP server
     METRICS_HTTP_SERVER_ENABLED: bool = True
 
