@@ -19,7 +19,9 @@ class Registry:
         self.processors[processor.channel][processor.module][processor.name] = processor
 
     def process(
-        self, task: models.Task, event_cls: typing.Type | None = models.Event
+        self,
+        task: models.Task,
+        event_cls: typing.Type | None = None,
     ) -> typing.Any:
         modules = self.processors.get(task.channel, {})
         functions = modules.get(task.module, {})
