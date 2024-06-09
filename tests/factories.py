@@ -1,4 +1,5 @@
 from factory import Faker
+from factory import SubFactory
 from factory.alchemy import SQLAlchemyModelFactory
 from sqlalchemy import func
 
@@ -36,4 +37,16 @@ class TaskFactory(BaseFactory):
 
     class Meta:
         model = models.Task
+        sqlalchemy_session_persistence = "commit"
+
+
+class EventFactory(BaseFactory):
+    type = models.EventType.COMPLETE
+    task = SubFactory(TaskFactory)
+    created_at = func.now()
+    error_message = None
+    scheduled_at = None
+
+    class Meta:
+        model = models.Event
         sqlalchemy_session_persistence = "commit"

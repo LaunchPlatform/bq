@@ -6,6 +6,7 @@ from pytest_factoryboy import register
 from sqlalchemy.engine import create_engine
 from sqlalchemy.engine import Engine
 
+from .factories import EventFactory
 from .factories import TaskFactory
 from .factories import WorkerFactory
 from bq.db.base import Base
@@ -13,6 +14,7 @@ from bq.db.session import Session
 
 register(TaskFactory)
 register(WorkerFactory)
+register(EventFactory)
 
 
 @pytest.fixture
