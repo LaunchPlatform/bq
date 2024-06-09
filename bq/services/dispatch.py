@@ -3,6 +3,7 @@ import select
 import typing
 import uuid
 
+from sqlalchemy import func
 from sqlalchemy.orm import Query
 
 from .. import models
@@ -21,11 +22,17 @@ class DispatchService:
         self.session = session
         self.task_model: typing.Type[models.Task] = task_model
 
-    def make_task_query(self, channels: typing.Sequence[str], limit: int = 1) -> Query:
+    def make_task_query(
+        self,
+        channels: typing.Sequence[str],
+        limit: int = 1,
+        now: typing.Any = func.now(),
+    ) -> Query:
         return (
             self.session.query(self.task_model.id)
             .filter(self.task_model.channel.in_(channels))
             .filter(self.task_model.state == models.TaskState.PENDING)
+            .filter(now >= self.task_model.scheduled_at)
             .order_by(self.task_model.created_at)
             .limit(limit)
             .with_for_update(skip_locked=True)
@@ -43,9 +50,13 @@ class DispatchService:
         )
 
     def dispatch(
-        self, channels: typing.Sequence[str], worker_id: uuid.UUID, limit: int = 1
+        self,
+        channels: typing.Sequence[str],
+        worker_id: uuid.UUID,
+        limit: int = 1,
+        now: typing.Any = func.now(),
     ) -> Query:
-        task_query = self.make_task_query(channels, limit=limit)
+        task_query = self.make_task_query(channels, limit=limit, now=now)
         task_subquery = task_query.scalar_subquery()
         task_ids = [
             item[0]

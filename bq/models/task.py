@@ -62,6 +62,11 @@ class TaskModelMixin:
     created_at: Mapped[datetime.datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=func.now()
     )
+    # scheduled to run at a specific time
+    scheduled_at: Mapped[datetime.datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=True,
+    )
 
 
 class TaskModelRefWorkerMixin:
