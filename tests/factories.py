@@ -31,6 +31,7 @@ class TaskFactory(BaseFactory):
     func_name = Faker("slug")
     worker = None
     created_at = func.now()
+    scheduled_at = None
     kwargs = {}
 
     class Meta:

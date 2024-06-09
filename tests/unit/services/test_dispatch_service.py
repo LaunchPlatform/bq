@@ -1,4 +1,7 @@
+import datetime
+
 import pytest
+from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from ...factories import TaskFactory
@@ -31,6 +34,36 @@ def test_dispatch(
     assert returned_task.state == models.TaskState.PROCESSING
     assert returned_task.worker == worker
     assert not list(dispatch_service.dispatch([task.channel], worker_id=worker.id))
+
+
+@pytest.mark.parametrize(
+    "task__scheduled_at", [func.now() + datetime.timedelta(seconds=10)]
+)
+def test_dispatch_with_scheduled_at(
+    db: Session,
+    dispatch_service: DispatchService,
+    worker: models.Worker,
+    task: models.Task,
+):
+    assert task.state == models.TaskState.PENDING
+    assert task.scheduled_at is not None
+
+    tasks = list(dispatch_service.dispatch([task.channel], worker_id=worker.id))
+    db.expire_all()
+    assert len(tasks) == 0
+
+    tasks = list(
+        dispatch_service.dispatch(
+            [task.channel],
+            worker_id=worker.id,
+            now=func.now() + datetime.timedelta(seconds=10),
+        )
+    )
+    db.expire_all()
+    assert len(tasks) == 1
+    returned_task = tasks[0]
+    assert returned_task.state == models.TaskState.PROCESSING
+    assert returned_task.worker == worker
 
 
 def test_dispatch_many(
