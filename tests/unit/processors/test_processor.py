@@ -4,6 +4,7 @@ import pytest
 from sqlalchemy.orm import Session
 
 from bq import models
+from bq.processors.processor import current_task
 from bq.processors.processor import Processor
 
 
@@ -115,3 +116,23 @@ def test_processor_helper(processor_module: str):
     assert task.func_name == "processor0"
     assert task.channel == "mock-channel"
     assert task.kwargs == dict(k0="v0")
+    assert task.parent is None
+    assert not task.children
+
+
+def test_processor_helper_create_child_task(
+    db: Session, processor_module: str, task: models.Task
+):
+    from ..fixtures.processors import processor0
+
+    token = current_task.set(task)
+    try:
+        child_task = processor0.run(k0="v0")
+        db.add(child_task)
+        db.commit()
+    finally:
+        current_task.reset(token)
+
+    db.expire_all()
+    assert child_task.parent == task
+    assert task.children == [child_task]
