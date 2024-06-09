@@ -5,6 +5,7 @@ from .event import EventType
 from .task import Task
 from .task import TaskModelMixin
 from .task import TaskModelRefEventMixin
+from .task import TaskModelRefParentMixin
 from .task import TaskModelRefWorkerMixin
 from .task import TaskState
 from .worker import Worker
