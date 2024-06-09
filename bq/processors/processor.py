@@ -23,6 +23,8 @@ class Processor:
     auto_complete: bool = True
     # should we auto rollback the transaction when encounter unhandled exception
     auto_rollback_on_exc: bool = True
+    # The retry policy function for returning a new scheduled time for next attempt
+    retry_policy: typing.Callable | None = None
 
     def process(self, task: models.Task, event_cls: typing.Type | None = None):
         ctx_token = current_task.set(task)
@@ -48,12 +50,20 @@ class Processor:
                         savepoint.rollback()
                     task.state = models.TaskState.FAILED
                     task.error_message = str(exc)
-                    # TODO: call retry policy here
+                    retry_scheduled_at = None
+                    if self.retry_policy is not None:
+                        retry_scheduled_at = self.retry_policy(task)
+                        if retry_scheduled_at is not None:
+                            task.state = models.TaskState.PENDING
+                            task.scheduled_at = retry_scheduled_at
                     if event_cls is not None:
                         event = event_cls(
                             task=task,
-                            type=models.EventType.FAILED,
+                            type=models.EventType.FAILED
+                            if retry_scheduled_at is None
+                            else models.EventType.FAILED_RETRY_SCHEDULED,
                             error_message=task.error_message,
+                            scheduled_at=retry_scheduled_at,
                         )
                         db.add(event)
                     db.add(task)
