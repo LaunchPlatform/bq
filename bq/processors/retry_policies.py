@@ -19,7 +19,7 @@ def get_failure_times(task: models.Task) -> int:
     ).count()
 
 
-class Delay:
+class DelayRetry:
     def __init__(self, delay: datetime.timedelta):
         self.delay = delay
 
@@ -27,7 +27,7 @@ class Delay:
         return func.now() + self.delay
 
 
-class ExponentialBackoff:
+class ExponentialBackoffRetry:
     def __init__(
         self, base: float = 2, exponent_offset: float = 0, exponent_scalar: float = 1.0
     ):

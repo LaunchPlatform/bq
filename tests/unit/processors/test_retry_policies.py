@@ -7,8 +7,8 @@ from sqlalchemy.orm import Session
 
 from ...factories import EventFactory
 from bq import models
-from bq.processors.retry_policies import Delay
-from bq.processors.retry_policies import ExponentialBackoff
+from bq.processors.retry_policies import DelayRetry
+from bq.processors.retry_policies import ExponentialBackoffRetry
 from bq.processors.retry_policies import LimitAttempt
 
 
@@ -18,7 +18,7 @@ def test_delay_policy(
 ):
     for _ in range(failure_count):
         event_factory(task=task, type=models.EventType.FAILED_RETRY_SCHEDULED)
-    delay = Delay(delay=datetime.timedelta(seconds=5))
+    delay = DelayRetry(delay=datetime.timedelta(seconds=5))
     scheduled_at = delay(task)
     expected = db.scalar(select(func.now() + datetime.timedelta(seconds=5)))
     actual = db.scalar(select(scheduled_at))
@@ -43,7 +43,7 @@ def test_exponential_backoff(
 ):
     for _ in range(failure_count):
         event_factory(task=task, type=models.EventType.FAILED_RETRY_SCHEDULED)
-    backoff = ExponentialBackoff(base=2, exponent_offset=3, exponent_scalar=2)
+    backoff = ExponentialBackoffRetry(base=2, exponent_offset=3, exponent_scalar=2)
     scheduled_at = backoff(task)
     expected = db.scalar(
         select(func.now() + datetime.timedelta(seconds=expected_delay))
@@ -71,7 +71,7 @@ def test_limit_attempt(
 ):
     for _ in range(failure_count):
         event_factory(task=task, type=models.EventType.FAILED_RETRY_SCHEDULED)
-    policy = LimitAttempt(6, Delay(delay=datetime.timedelta(seconds=5)))
+    policy = LimitAttempt(6, DelayRetry(delay=datetime.timedelta(seconds=5)))
     scheduled_at = policy(task)
     if expected_retry:
         assert scheduled_at is not None

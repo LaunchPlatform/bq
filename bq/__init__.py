@@ -14,3 +14,6 @@ from .models import Worker  # noqa
 from .models import WorkerModelMixin  # noqa
 from .models import WorkerRefMixin  # noqa
 from .models import WorkerState  # noqa
+from .processors.retry_policies import DelayRetry
+from .processors.retry_policies import ExponentialBackoffRetry
+from .processors.retry_policies import LimitAttempt
