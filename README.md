@@ -171,12 +171,16 @@ app.process_tasks(channels=("images",))
 BeanQueue is designed to be as customizable as much as possible.
 Of course, you can define your own SQLAlchemy model instead of using the ones we provided. 
 
-To make defining your own `Task` model or `Worker` model much easier, you can use our mixin classes:
+To make defining your own `Task`, `Worker` or `Event` model much easier, you can use our mixin classes:
 
 - `bq.TaskModelMixin`: provides task model columns
 - `bq.TaskModelRefWorkerMixin`: provides foreign key column and relationship to `bq.Worker`
+- `bq.TaskModelRefParentMixin`: provides foreign key column and relationship to children `bq.Task` created during processing
+- `bq.TaskModelRefEventMixin`: provides foreign key column and relationship to `bq.Event`
 - `bq.WorkerModelMixin`: provides worker model columns
 - `bq.WorkerRefMixin`: provides relationship to `bq.Task`
+- `bq.EventModelMixin`: provides event model columns
+- `bq.EventModelRefTaskMixin`: provides foreign key column and relationship to `bq.Task`
 
 Here's an example for defining your own Task model:
 
@@ -235,13 +239,14 @@ class Worker(bq.WorkerModelMixin, Base):
     )
 ```
 
-With the model class ready, you only need to change the `TASK_MODEL` and `WORKER_MODEL` of `Config` to the full Python module name plus the class name like this.
+With the model class ready, you only need to change the `TASK_MODEL`, `WORKER_MODEL` and `EVENT_MODEL` of `Config` to the full Python module name plus the class name like this.
 
 ```python
 import bq
 config = bq.Config(
     TASK_MODEL="my_pkgs.models.Task",
     WORKER_MODEL="my_pkgs.models.Worker",
+    EVENT_MODEL="my_pkgs.models.Event",
     # ... other configs
 )
 app = bq.BeanQueue(config)
