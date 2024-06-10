@@ -129,6 +129,57 @@ It has to wait until the polling times out, and eventually, it will see the task
 Therefore, depending on your `POLL_TIMEOUT` setting and the number of your workers when they started processing, the actual execution may be inaccurate.
 If you set the `POLL_TIMEOUT` to 60 seconds, please expect less than 60 seconds of delay.
 
+### Retry
+
+To automatically retry a task after failure, you can specify a retry policy to the processor.
+
+```python
+import datetime
+import bq
+from sqlalchemy.orm import Session
+
+app = bq.BeanQueue()
+delay_retry = bq.DelayRetry(delay=datetime.timedelta(seconds=120))
+
+@app.processor(channel="images", retry_policy=delay_retry)
+def resize_image(db: Session, task: bq.Task, width: int, height: int):
+    # resize iamge here ...
+    pass
+```
+
+Currently, we provide some simple common retry policies such as `DelayRetry` and `ExponentialBackoffRetry`.
+Surely, you can define your retry policy easily by making a function that returns an optional object at the next scheduled time for retry.
+
+```python
+def my_retry_policy(task: bq.Task) -> typing.Any:
+    # calculate delay based on task model ...
+    return func.now() + datetime.timedelta(seconds=delay)
+```
+
+To cap how many attempts is allowed, you can also use `LimitAttempt` like this:
+
+```python
+delay_retry = bq.DelayRetry(delay=datetime.timedelta(seconds=120))
+capped_delay_retry = bq.LimitAttempt(3, delay_retry)
+
+@app.processor(channel="images", retry_policy=capped_delay_retry)
+def resize_image(db: Session, task: bq.Task, width: int, height: int):
+    # resize iamge here ...
+    pass
+```
+
+You can also retry only for specific exception classes with the `retry_exceptions` argument.
+
+```python
+@app.processor(
+    channel="images",
+    retry_policy=delay_retry,
+    retry_exceptions=ValueError,
+)
+def resize_image(db: Session, task: bq.Task, width: int, height: int):
+    # resize iamge here ...
+    pass
+```
 
 ### Configurations
 
