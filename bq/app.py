@@ -104,6 +104,7 @@ class BeanQueue:
         auto_complete: bool = True,
         auto_rollback_on_exc: bool = True,
         retry_policy: typing.Callable | None = None,
+        retry_exceptions: typing.Type | typing.Tuple[typing.Type, ...] | None = None,
         task_model: typing.Type | None = None,
     ) -> typing.Callable:
         def decorator(wrapped: typing.Callable):
@@ -115,6 +116,7 @@ class BeanQueue:
                 auto_complete=auto_complete,
                 auto_rollback_on_exc=auto_rollback_on_exc,
                 retry_policy=retry_policy,
+                retry_exceptions=retry_exceptions,
             )
             helper_obj = ProcessorHelper(
                 processor,

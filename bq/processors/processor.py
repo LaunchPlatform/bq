@@ -25,6 +25,8 @@ class Processor:
     auto_rollback_on_exc: bool = True
     # The retry policy function for returning a new scheduled time for next attempt
     retry_policy: typing.Callable | None = None
+    # The exceptions we suppose to retry when encountered
+    retry_exceptions: typing.Type | typing.Tuple[typing.Type, ...] | None = None
 
     def process(self, task: models.Task, event_cls: typing.Type | None = None):
         ctx_token = current_task.set(task)
@@ -51,7 +53,10 @@ class Processor:
                     task.state = models.TaskState.FAILED
                     task.error_message = str(exc)
                     retry_scheduled_at = None
-                    if self.retry_policy is not None:
+                    if (
+                        self.retry_exceptions is None
+                        or isinstance(exc, self.retry_exceptions)
+                    ) and self.retry_policy is not None:
                         retry_scheduled_at = self.retry_policy(task)
                         if retry_scheduled_at is not None:
                             task.state = models.TaskState.PENDING
