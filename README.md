@@ -9,6 +9,8 @@ BeanQueue, a lightweight Python task queue framework based on [SQLAlchemy](https
 - **Easy-to-deploy**: Only rely on PostgreSQL
 - **Easy-to-use**: Provide command line tools for processing tasks, also helpers for generating tasks models
 - **Auto-notify**: Notify will automatically be generated and send for inserted or update tasks
+- **Retry**: Built-in and customizable retry-policies
+- **Schedule**: Schedule task to run later
 - **Worker heartbeat and auto-reschedule**: Each worker keeps updating heartbeat, if one is found dead, the others will reschedule the tasks
 - **Customizable**: Use it as an library and build your own work queue
 - **Native DB operations**: Commit your tasks with other db entries altogether without worrying about data inconsistent issue
@@ -106,6 +108,27 @@ To create tables for BeanQueue, you can run
 ```bash
 python -m bq.cmds.create_tables
 ```
+
+### Schedule
+
+In most cases, a task will be executed as soon as possible after it is created.
+To run a task later, you can set a datetime value to the `scheduled_at` attribute of the task model.
+For example:
+
+```python
+import datetime
+
+db = Session()
+task = resize_image.run(width=200, height=300)
+task.scheduled_at = func.now() + datetime.timedelta(minutes=3)
+db.add(task)
+```
+
+Please note that currently, workers won't wake up at the next exact moment when the scheduled tasks are ready to run.
+It has to wait until the polling times out, and eventually, it will see the task's scheduled_at time exceeds the current datetime.
+Therefore, depending on your `POLL_TIMEOUT` setting and the number of your workers when they started processing, the actual execution may be inaccurate.
+If you set the `POLL_TIMEOUT` to 60 seconds, please expect less than 60 seconds of delay.
+
 
 ### Configurations
 
