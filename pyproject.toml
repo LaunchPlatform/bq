@@ -1,7 +1,7 @@
 [tool.poetry]
 name = "beanqueue"
-version = "0.2.3"
-description = "BeanQueue or BQ for short, PostgreSQL SKIP LOCK based worker queue library"
+version = "1.0.0"
+description = "BeanQueue or BQ for short, PostgreSQL SKIP LOCK and SQLAlchemy based worker queue library"
 authors = ["Fang-Pen Lin <fangpen@launchplatform.com>"]
 license = "MIT"
 readme = "README.md"
