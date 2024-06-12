@@ -54,6 +54,8 @@ class Processor:
                         if self.auto_rollback_on_exc:
                             logger.info("Auto rollback savepoint for task %s", task.id)
                             savepoint.rollback()
+                        # need to leave the nested transaction context first so that we
+                        # can do queries
                         raise
             except Exception as exc:
                 task.state = models.TaskState.FAILED
