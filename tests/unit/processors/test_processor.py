@@ -102,15 +102,9 @@ def test_process_task_unhandled_exception(
 
 
 @pytest.mark.parametrize("task__func_name", ["my_func"])
-@pytest.mark.parametrize(
-    "auto_rollback_on_exc, expected_func_name",
-    [
-        (True, "my_func"),
-        (False, "changed"),
-    ],
-)
-def test_process_task_auto_rollback_on_exc(
-    db: Session, task: models.Task, auto_rollback_on_exc: bool, expected_func_name: str
+def test_process_savepoint_rollback(
+    db: Session,
+    task: models.Task,
 ):
     def func():
         task.func_name = "changed"
@@ -123,12 +117,11 @@ def test_process_task_auto_rollback_on_exc(
         module="mock.module",
         name="my_func",
         func=func,
-        auto_rollback_on_exc=auto_rollback_on_exc,
     )
     processor.process(task=task)
     db.commit()
     assert task.state == models.TaskState.FAILED
-    assert task.func_name == expected_func_name
+    assert task.func_name == "my_func"
 
 
 def test_processor_helper(processor_module: str):

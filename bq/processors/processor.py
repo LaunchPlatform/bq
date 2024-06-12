@@ -23,8 +23,6 @@ class Processor:
     func: typing.Callable
     # should we auto complete the task or not
     auto_complete: bool = True
-    # should we auto rollback the transaction when encounter unhandled exception
-    auto_rollback_on_exc: bool = True
     # The retry policy function for returning a new scheduled time for next attempt
     retry_policy: typing.Callable | None = None
     # The exceptions we suppose to retry when encountered
@@ -44,20 +42,10 @@ class Processor:
                 with db.begin_nested() as savepoint:
                     if "savepoint" in func_signature.parameters:
                         base_kwargs["savepoint"] = savepoint
-                    try:
-                        result = self.func(**base_kwargs, **task.kwargs)
-                    except Exception as exc:
-                        logger.error(
-                            "Unhandled exception for task %s", task.id, exc_info=True
-                        )
-                        events.task_failure.send(self, task=task, exception=exc)
-                        if self.auto_rollback_on_exc:
-                            logger.info("Auto rollback savepoint for task %s", task.id)
-                            savepoint.rollback()
-                        # need to leave the nested transaction context first so that we
-                        # can do queries
-                        raise
+                    result = self.func(**base_kwargs, **task.kwargs)
             except Exception as exc:
+                logger.error("Unhandled exception for task %s", task.id, exc_info=True)
+                events.task_failure.send(self, task=task, exception=exc)
                 task.state = models.TaskState.FAILED
                 task.error_message = str(exc)
                 retry_scheduled_at = None
