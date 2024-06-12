@@ -38,41 +38,50 @@ class Processor:
                 base_kwargs["task"] = task
             if "db" in func_signature.parameters:
                 base_kwargs["db"] = db
-            with db.begin_nested() as savepoint:
-                if "savepoint" in func_signature.parameters:
-                    base_kwargs["savepoint"] = savepoint
-                try:
-                    result = self.func(**base_kwargs, **task.kwargs)
-                except Exception as exc:
-                    logger.error(
-                        "Unhandled exception for task %s", task.id, exc_info=True
-                    )
-                    events.task_failure.send(self, task=task, exception=exc)
-                    if self.auto_rollback_on_exc:
-                        savepoint.rollback()
-                    task.state = models.TaskState.FAILED
-                    task.error_message = str(exc)
-                    retry_scheduled_at = None
-                    if (
-                        self.retry_exceptions is None
-                        or isinstance(exc, self.retry_exceptions)
-                    ) and self.retry_policy is not None:
-                        retry_scheduled_at = self.retry_policy(task)
-                        if retry_scheduled_at is not None:
-                            task.state = models.TaskState.PENDING
-                            task.scheduled_at = retry_scheduled_at
-                    if event_cls is not None:
-                        event = event_cls(
-                            task=task,
-                            type=models.EventType.FAILED
-                            if retry_scheduled_at is None
-                            else models.EventType.FAILED_RETRY_SCHEDULED,
-                            error_message=task.error_message,
-                            scheduled_at=retry_scheduled_at,
+            try:
+                with db.begin_nested() as savepoint:
+                    if "savepoint" in func_signature.parameters:
+                        base_kwargs["savepoint"] = savepoint
+                    try:
+                        result = self.func(**base_kwargs, **task.kwargs)
+                    except Exception as exc:
+                        logger.error(
+                            "Unhandled exception for task %s", task.id, exc_info=True
                         )
-                        db.add(event)
-                    db.add(task)
-                    return
+                        events.task_failure.send(self, task=task, exception=exc)
+                        if self.auto_rollback_on_exc:
+                            logger.info("Auto rollback savepoint for task %s", task.id)
+                            savepoint.rollback()
+                        raise
+            except Exception as exc:
+                task.state = models.TaskState.FAILED
+                task.error_message = str(exc)
+                retry_scheduled_at = None
+                if (
+                    self.retry_exceptions is None
+                    or isinstance(exc, self.retry_exceptions)
+                ) and self.retry_policy is not None:
+                    retry_scheduled_at = self.retry_policy(task)
+                    if retry_scheduled_at is not None:
+                        task.state = models.TaskState.PENDING
+                        task.scheduled_at = retry_scheduled_at
+                        logger.info(
+                            "Schedule task %s for retry at %s",
+                            task.id,
+                            retry_scheduled_at,
+                        )
+                if event_cls is not None:
+                    event = event_cls(
+                        task=task,
+                        type=models.EventType.FAILED
+                        if retry_scheduled_at is None
+                        else models.EventType.FAILED_RETRY_SCHEDULED,
+                        error_message=task.error_message,
+                        scheduled_at=retry_scheduled_at,
+                    )
+                    db.add(event)
+                db.add(task)
+                return
             if self.auto_complete:
                 logger.info("Task %s auto complete", task.id)
                 task.state = models.TaskState.DONE
