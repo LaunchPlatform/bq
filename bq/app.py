@@ -7,6 +7,7 @@ import sys
 import threading
 import time
 import typing
+from importlib.metadata import PackageNotFoundError
 from importlib.metadata import version
 from wsgiref.simple_server import make_server
 from wsgiref.simple_server import WSGIRequestHandler
@@ -252,8 +253,14 @@ class BeanQueue:
         self,
         channels: tuple[str, ...],
     ):
+        try:
+            bq_version = version(__name__.split(".")[0])
+        except PackageNotFoundError:
+            bq_version = "unknown"
+
         logger.info(
-            "Starting processing tasks, bq_version=%s", version(__name__.split(".")[0])
+            "Starting processing tasks, bq_version=%s",
+            bq_version,
         )
         db = self.make_session()
         if not channels:
