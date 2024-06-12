@@ -45,7 +45,7 @@ class Registry:
                 db.add(event)
             db.add(task)
             return
-        return processor.process(task)
+        return processor.process(task, event_cls=event_cls)
 
 
 def collect(packages: list[typing.Any], registry: Registry | None = None) -> Registry:
