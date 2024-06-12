@@ -7,6 +7,7 @@ import sys
 import threading
 import time
 import typing
+from importlib.metadata import version
 from wsgiref.simple_server import make_server
 from wsgiref.simple_server import WSGIRequestHandler
 
@@ -251,6 +252,9 @@ class BeanQueue:
         self,
         channels: tuple[str, ...],
     ):
+        logger.info(
+            "Starting processing tasks, bq_version=%s", version(__name__.split(".")[0])
+        )
         db = self.make_session()
         if not channels:
             channels = [constants.DEFAULT_CHANNEL]
