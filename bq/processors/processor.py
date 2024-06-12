@@ -1,9 +1,11 @@
 import contextvars
 import dataclasses
+import datetime
 import inspect
 import logging
 import typing
 
+from sqlalchemy import select
 from sqlalchemy.orm import object_session
 
 from .. import events
@@ -65,10 +67,16 @@ class Processor:
                     if retry_scheduled_at is not None:
                         task.state = models.TaskState.PENDING
                         task.scheduled_at = retry_scheduled_at
+                        if isinstance(retry_scheduled_at, datetime.datetime):
+                            retry_scheduled_at_value = retry_scheduled_at
+                        else:
+                            retry_scheduled_at_value = db.scalar(
+                                select(retry_scheduled_at)
+                            )
                         logger.info(
                             "Schedule task %s for retry at %s",
                             task.id,
-                            retry_scheduled_at,
+                            retry_scheduled_at_value,
                         )
                 if event_cls is not None:
                     event = event_cls(
