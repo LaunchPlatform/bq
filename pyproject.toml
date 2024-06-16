@@ -9,6 +9,9 @@ packages = [
     { include = "bq" },
 ]
 
+[tool.poetry.scripts]
+bq = "bq.cmds:cli"
+
 [tool.poetry.dependencies]
 python = "^3.11"
 sqlalchemy = "^2.0.30"
@@ -17,6 +20,7 @@ click = "^8.1.7"
 pydantic-settings = "^2.2.1"
 pg-activity = "^3.5.1"
 blinker = "^1.8.2"
+rich = "^13.7.1"
 
 
 [tool.poetry.group.dev.dependencies]
