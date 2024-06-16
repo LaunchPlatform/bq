@@ -34,11 +34,17 @@ def cli(env: Environment, log_level: str, disable_rich_log: bool, app: str):
     env.log_level = LogLevel(log_level)
     env.app = load_app(app)
 
-    FORMAT = "%(message)s"
-    logging.basicConfig(
-        level=LOG_LEVEL_MAP[env.log_level],
-        format=FORMAT,
-        datefmt="[%X]",
-        force=True,
-        **(dict(handlers=[RichHandler()]) if not disable_rich_log else {})
-    )
+    if disable_rich_log:
+        logging.basicConfig(
+            level=LOG_LEVEL_MAP[env.log_level],
+            force=True,
+        )
+    else:
+        FORMAT = "%(message)s"
+        logging.basicConfig(
+            level=LOG_LEVEL_MAP[env.log_level],
+            format=FORMAT,
+            datefmt="[%X]",
+            handlers=[RichHandler()],
+            force=True,
+        )
