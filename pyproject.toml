@@ -10,7 +10,7 @@ packages = [
 ]
 
 [tool.poetry.scripts]
-bq = "bq.cmds:cli"
+bq = "bq.cmds.main:cli"
 
 [tool.poetry.dependencies]
 python = "^3.11"

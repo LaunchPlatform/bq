@@ -7,6 +7,6 @@ from .environment import pass_env
 
 @cli.command(name="create_tables", help="Create BeanQueue tables")
 @pass_env
-def main(env: Environment):
+def create_tables(env: Environment):
     Base.metadata.create_all(bind=env.app.engine)
     env.logger.info("Done, tables created")

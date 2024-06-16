@@ -7,11 +7,8 @@ from .environment import pass_env
 
 @cli.command(name="process", help="Process BeanQueue tasks")
 @click.argument("channels", nargs=-1)
-@click.option(
-    "-a", "--app", type=str, help='BeanQueue app object to use, e.g. "my_pkgs.bq.app"'
-)
 @pass_env
-def main(
+def process(
     env: Environment,
     channels: tuple[str, ...],
 ):

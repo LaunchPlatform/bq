@@ -8,7 +8,7 @@ from .environment import Environment
 from .environment import pass_env
 
 
-@cli.command()
+@cli.command(name="submit", help="Submit a new task, mostly for debugging purpose")
 @click.argument("channel", nargs=1)
 @click.argument("module", nargs=1)
 @click.argument("func", nargs=1)
@@ -16,7 +16,7 @@ from .environment import pass_env
     "-k", "--kwargs", type=str, help="Keyword arguments as JSON", default=None
 )
 @pass_env
-def main(
+def submit(
     env: Environment,
     channel: str,
     module: str,
