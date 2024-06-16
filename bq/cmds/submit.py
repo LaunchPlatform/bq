@@ -32,7 +32,10 @@ def submit(
     if kwargs:
         kwargs_value = json.loads(kwargs)
     task = models.Task(
-        channel=channel, module=module, func_name=func, kwargs=kwargs_value
+        channel=channel,
+        module=module,
+        func_name=func,
+        kwargs=kwargs_value,
     )
     db.add(task)
     db.commit()
