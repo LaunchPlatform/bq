@@ -93,20 +93,20 @@ db.commit()
 To run the worker, you can do this:
 
 ```bash
-BQ_PROCESSOR_PACKAGES='["my_pkgs.processors"]' python -m bq.cmds.process images
+BQ_PROCESSOR_PACKAGES='["my_pkgs.processors"]' bq process images
 ```
 
 The `BQ_PROCESSOR_PACKAGES` is a JSON list contains the Python packages where you define your processors (the functions you decorated with `bq.processors.registry.processor`).
 To submit a task for testing purpose, you can do
 
 ```bash
-python -m bq.cmds.submit images my_pkgs.processors resize_image -k '{"width": 200, "height": 300}'
+bq submit images my_pkgs.processors resize_image -k '{"width": 200, "height": 300}'
 ```
 
 To create tables for BeanQueue, you can run
 
 ```bash
-python -m bq.cmds.create_tables
+bq create_tables
 ```
 
 ### Schedule
@@ -208,7 +208,7 @@ app = bq.BeanQueue(config=config)
 Then you can pass `--app` argument (or `-a` for short) pointing to the app object to the process command like this:
 
 ```bash
-python -m bq.cmds.process -a my_pkgs.bq.app images
+bq -a my_pkgs.bq.app process images
 ```
 
 Or if you prefer to define your own process command, you can also call `process_tasks` of the `BeanQueue` object directly like this:
