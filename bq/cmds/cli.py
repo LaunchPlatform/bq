@@ -21,11 +21,16 @@ from .utils import load_app
     default=lambda: os.environ.get("LOG_LEVEL", "INFO"),
 )
 @click.option(
+    "--disable-rich-log",
+    is_flag=True,
+    help="disable rich log handler",
+)
+@click.option(
     "-a", "--app", type=str, help='BeanQueue app object to use, e.g. "my_pkgs.bq.app"'
 )
 @click.version_option(prog_name="bq", package_name="bq")
 @pass_env
-def cli(env: Environment, log_level: str, app: str):
+def cli(env: Environment, log_level: str, disable_rich_log: bool, app: str):
     env.log_level = LogLevel(log_level)
     env.app = load_app(app)
 
@@ -34,6 +39,6 @@ def cli(env: Environment, log_level: str, app: str):
         level=LOG_LEVEL_MAP[env.log_level],
         format=FORMAT,
         datefmt="[%X]",
-        handlers=[RichHandler()],
         force=True,
+        **(dict(handlers=[RichHandler()]) if not disable_rich_log else {})
     )
