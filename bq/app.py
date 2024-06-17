@@ -252,7 +252,7 @@ class BeanQueue:
         channels: tuple[str, ...],
     ):
         try:
-            bq_version = version(__name__.split(".")[0])
+            bq_version = version("beanqueue")
         except PackageNotFoundError:
             bq_version = "unknown"
 
