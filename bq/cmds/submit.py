@@ -2,7 +2,6 @@ import json
 
 import click
 
-from .. import models
 from .cli import cli
 from .environment import Environment
 from .environment import pass_env
@@ -23,7 +22,7 @@ def submit(
     func: str,
     kwargs: str | None,
 ):
-    db = env.app.session_cls(bind=env.app.create_default_engine())
+    db = env.app.make_session()
 
     env.logger.info(
         "Submit task with channel=%s, module=%s, func=%s", channel, module, func
@@ -31,7 +30,8 @@ def submit(
     kwargs_value = {}
     if kwargs:
         kwargs_value = json.loads(kwargs)
-    task = models.Task(
+
+    task = env.app.task_model(
         channel=channel,
         module=module,
         func_name=func,
