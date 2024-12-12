@@ -384,3 +384,4 @@ A modern accounting book service based on the most popular open source version c
 - [pq](https://github.com/malthe/pq/)
 - [PgQueuer](https://github.com/janbjorge/PgQueuer)
 - [hatchet](https://github.com/hatchet-dev/hatchet)
+- [procrastinate](https://github.com/procrastinate-org/procrastinate)
