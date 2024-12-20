@@ -363,7 +363,7 @@ class BeanQueue:
 
         worker.state = models.WorkerState.SHUTDOWN
         db.add(worker)
-        task_count = self.worker_service_cls.reschedule_dead_tasks([worker.id])
+        task_count = work_service.reschedule_dead_tasks([worker.id])
         logger.info("Reschedule %s tasks", task_count)
         dispatch_service.notify(channels)
         db.commit()
