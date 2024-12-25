@@ -56,10 +56,10 @@ class Config(BaseSettings):
     def assemble_db_connection(
         cls, v: typing.Optional[str], info: ValidationInfo
     ) -> typing.Any:
-        if isinstance(v, str):
+        if isinstance(v, (str, PostgresDsn, MultiHostUrl)):
             return v
-        if isinstance(v, MultiHostUrl):
-            return v
+        if v is not None:
+            raise ValueError("Unexpected DATABASE_URL type")
         return PostgresDsn.build(
             scheme="postgresql",
             username=info.data.get("POSTGRES_USER"),
