@@ -57,8 +57,18 @@ class Config(BaseSettings):
     def assemble_db_connection(
         cls, v: typing.Optional[str], info: ValidationInfo
     ) -> typing.Any:
-        if isinstance(v, (str, MultiHostUrl)):
+        if isinstance(v, str):
             return v
+        # Notice: Older Pydantic version (2.7), PostgresDsn is an annotated MultiHostUrl object,
+        #         we cannot use isinstance with PostgresDsn directly. We need to check and see if PostgresDsn
+        #         is an annotated type or not before we decide how to check if the passed in object is an
+        #         PostgresDsn or not.
+        if typing.get_origin(PostgresDsn) is typing.Annotated:
+            if isinstance(v, MultiHostUrl):
+                return v
+        else:
+            if isinstance(v, PostgresDsn):
+                return v
         if v is not None:
             raise ValueError("Unexpected DATABASE_URL type")
         return PostgresDsn.build(
