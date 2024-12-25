@@ -1,5 +1,6 @@
 import typing
 
+from pydantic import Field
 from pydantic import field_validator
 from pydantic import PostgresDsn
 from pydantic import ValidationInfo
@@ -10,7 +11,7 @@ from pydantic_settings import SettingsConfigDict
 
 class Config(BaseSettings):
     # Packages to scan for processor functions
-    PROCESSOR_PACKAGES: list[str] = []
+    PROCESSOR_PACKAGES: list[str] = Field(default_factory=list)
 
     # Size of tasks batch to fetch each time from the database
     BATCH_SIZE: int = 1
@@ -56,7 +57,7 @@ class Config(BaseSettings):
     def assemble_db_connection(
         cls, v: typing.Optional[str], info: ValidationInfo
     ) -> typing.Any:
-        if isinstance(v, (str, PostgresDsn, MultiHostUrl)):
+        if isinstance(v, (str, MultiHostUrl)):
             return v
         if v is not None:
             raise ValueError("Unexpected DATABASE_URL type")
