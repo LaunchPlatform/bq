@@ -1,4 +1,5 @@
-# BeanQueue  [![CircleCI](https://dl.circleci.com/status-badge/img/gh/LaunchPlatform/bq/tree/master.svg?style=svg)](https://dl.circleci.com/status-badge/redirect/gh/LaunchPlatform/beanhub-extract/tree/master)
+# BeanQueue [![CircleCI](https://dl.circleci.com/status-badge/img/gh/LaunchPlatform/bq/tree/master.svg?style=svg)](https://dl.circleci.com/status-badge/redirect/gh/LaunchPlatform/beanhub-extract/tree/master)
+
 BeanQueue, a lightweight Python task queue framework based on [SQLAlchemy](https://www.sqlalchemy.org/), PostgreSQL [SKIP LOCKED queries](https://www.2ndquadrant.com/en/blog/what-is-select-skip-locked-for-in-postgresql-9-5/) and [NOTIFY](https://www.postgresql.org/docs/current/sql-notify.html) / [LISTEN](https://www.postgresql.org/docs/current/sql-listen.html) statements.
 
 **Notice**: Still in its early stage, we built this for [BeanHub](https://beanhub.io)'s internal usage. May change rapidly. Use at your own risk for now.
@@ -6,14 +7,14 @@ BeanQueue, a lightweight Python task queue framework based on [SQLAlchemy](https
 ## Features
 
 - **Super lightweight**: Under 1K lines
-- **Easy-to-deploy**: Only rely on PostgreSQL
-- **Easy-to-use**: Provide command line tools for processing tasks, also helpers for generating tasks models
-- **Auto-notify**: Notify will automatically be generated and send for inserted or update tasks
-- **Retry**: Built-in and customizable retry-policies
-- **Schedule**: Schedule task to run later
+- **Easy-to-deploy**: Only relies on PostgreSQL
+- **Transactional**: Commit your tasks with other database entries altogether without worrying about data inconsistencies
+- **Easy-to-use**: Built-in command line tools for processing tasks and helpers for generating task models
+- **Auto-notify**: Automatic generation of NOTIFY statements for new or updated tasks, ensuring fast task processing
+- **Retry**: Built-in and customizable retry policies
+- **Schedule**: Schedule tasks to run later
 - **Worker heartbeat and auto-reschedule**: Each worker keeps updating heartbeat, if one is found dead, the others will reschedule the tasks
-- **Customizable**: Use it as an library and build your own work queue
-- **Native DB operations**: Commit your tasks with other db entries altogether without worrying about data inconsistent issue
+- **Customizable**: Custom Task, Worker and Event models. Use it as a library and build your own work queue
 
 ## Install
 
@@ -23,7 +24,7 @@ pip install beanqueue
 
 ## Usage
 
-You can define a task processor like this
+You can define a basic task processor like this
 
 ```python
 from sqlalchemy.orm import Session
@@ -143,20 +144,20 @@ delay_retry = bq.DelayRetry(delay=datetime.timedelta(seconds=120))
 
 @app.processor(channel="images", retry_policy=delay_retry)
 def resize_image(db: Session, task: bq.Task, width: int, height: int):
-    # resize iamge here ...
+    # resize image here ...
     pass
 ```
 
 Currently, we provide some simple common retry policies such as `DelayRetry` and `ExponentialBackoffRetry`.
-Surely, you can define your retry policy easily by making a function that returns an optional object at the next scheduled time for retry.
+You can define your retry policy easily by making a function that returns an optional object at the next scheduled time for retry.
 
 ```python
 def my_retry_policy(task: bq.Task) -> typing.Any:
-    # calculate delay based on task model ...
+    # Calculate delay based on task model ...
     return func.now() + datetime.timedelta(seconds=delay)
 ```
 
-To cap how many attempts is allowed, you can also use `LimitAttempt` like this:
+To cap how many attempts are allowed, you can also use `LimitAttempt` like this:
 
 ```python
 delay_retry = bq.DelayRetry(delay=datetime.timedelta(seconds=120))
@@ -164,7 +165,7 @@ capped_delay_retry = bq.LimitAttempt(3, delay_retry)
 
 @app.processor(channel="images", retry_policy=capped_delay_retry)
 def resize_image(db: Session, task: bq.Task, width: int, height: int):
-    # resize iamge here ...
+    # Resize image here ...
     pass
 ```
 
@@ -177,7 +178,7 @@ You can also retry only for specific exception classes with the `retry_exception
     retry_exceptions=ValueError,
 )
 def resize_image(db: Session, task: bq.Task, width: int, height: int):
-    # resize iamge here ...
+    # resize image here ...
     pass
 ```
 
@@ -220,9 +221,9 @@ app.process_tasks(channels=("images",))
 ### Define your own tables
 
 BeanQueue is designed to be as customizable as much as possible.
-Of course, you can define your own SQLAlchemy model instead of using the ones we provided. 
+One of its key features is that you can define your own SQLAlchemy model instead of using the ones we provided.
 
-To make defining your own `Task`, `Worker` or `Event` model much easier, you can use our mixin classes:
+To make defining your own `Task`, `Worker` or `Event` model much easier, use bq's mixin classes:
 
 - `bq.TaskModelMixin`: provides task model columns
 - `bq.TaskModelRefWorkerMixin`: provides foreign key column and relationship to `bq.Worker`
@@ -238,12 +239,13 @@ Here's an example for defining your own Task model:
 ```python
 import uuid
 
-import bq
 from sqlalchemy import ForeignKey
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped
 from sqlalchemy.orm import mapped_column
 from sqlalchemy.orm import relationship
+import bq
+from bq.models.task import listen_events
 
 from .base_class import Base
 
@@ -260,14 +262,13 @@ class Task(bq.TaskModelMixin, Base):
     worker: Mapped["Worker"] = relationship(
         "Worker", back_populates="tasks", uselist=False
     )
-```
 
-To make task insert and update with state changing to `PENDING` send out NOTIFY "channel" statement automatically, you can also use `bq.models.task.listen_events` helper to register our SQLAlchemy event handlers automatically like this
-
-```python
-from bq.models.task import listen_events
 listen_events(Task)
 ```
+
+For task insertion and updates to notify workers, we need to register any custom task types with `bq.models.task.listen_events`.
+In the example above, this is done right after the Task model definition.
+For more details and advanced usage, see the definition of `bq.models.task.listen_events`.
 
 You just see how easy it is to define your Task model. Now, here's an example for defining your own Worker model:
 
@@ -341,7 +342,7 @@ With this approach, we don't need to worry about workers picking up the task too
 However, there's another drawback.
 If step 3 for pushing a new task to the work queue fails, the newly inserted `images` row will never be processed.
 There are many solutions to this problem, but these are all caused by inconsistent data views between the database and the work queue storage.
-Things will be much easier if we have a work queue that shares the same consistent view with the database.
+Things would be much easier if we had a work queue that shared the same consistent view as the database.
 
 By using a database as the data storage, all the problems are gone.
 You can simply do the following:
@@ -362,10 +363,10 @@ However, things have changed since the [introduction of the SKIP LOCKED](https:/
 This project is inspired by many of the SKIP-LOCKED-based work queue successors.
 Why don't we just use those existing tools?
 Well, because while they work great as work queue solutions, they don't take advantage of writing tasks and their relative data into the database in a transaction.
-Many provide an abstraction function or gRPC method of pushing tasks into the database instead of opening it up for the user to insert the row directly with other rows and commit altogether.
+Many provide an abstraction function or gRPC method for pushing tasks into the database, rather than allowing users to directly insert rows and commit them together.
 
-With BeanQueue, we don't abstract away the logic of publishing a new task into the queue.
-Instead, we open it up to let the user insert the row and choose when and what to commit to the task.
+BeanQueue doesn't overly abstract the logic of publishing a new task into the queue.
+Instead, you insert rows directly, choosing when and what to commit as tasks.
 
 ## Sponsor
 
