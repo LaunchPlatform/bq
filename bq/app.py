@@ -63,6 +63,10 @@ class BeanQueue:
         self.worker_service_cls = worker_service_cls
         self.dispatch_service_cls = dispatch_service_cls
         self._engine = engine
+        self._worker_update_shutdown_event: threading.Event = threading.Event()
+        # noop if metrics thread is not started yet, shutdown if it is started
+        self._metrics_server_shutdown: typing.Callable[[], None] = lambda : None
+
 
     def create_default_engine(self):
         return create_engine(
@@ -184,7 +188,10 @@ class BeanQueue:
                 )
                 sys.exit(0)
 
-            time.sleep(self.config.WORKER_HEARTBEAT_PERIOD)
+            do_shutdown = self._worker_update_shutdown_event.wait(self.config.WORKER_HEARTBEAT_PERIOD)
+            if do_shutdown:
+                return
+
             current_worker.last_heartbeat = func.now()
             db.add(current_worker)
             db.commit()
@@ -244,6 +251,8 @@ class BeanQueue:
             functools.partial(self._serve_http_request, worker_id),
             handler_class=WSGIRequestHandlerWithLogger,
         ) as httpd:
+            # expose graceful shutdown to the main thread
+            self._metrics_server_shutdown= httpd.shutdown
             logger.info("Run metrics HTTP server on %s:%s", host, port)
             httpd.serve_forever()
 
@@ -307,7 +316,7 @@ class BeanQueue:
         events.worker_init.send(self, worker=worker)
 
         logger.info("Processing tasks in channels = %s ...", channels)
-
+        # Graceful shutdown of worker update event on exit of the worker
         worker_update_thread = threading.Thread(
             target=functools.partial(
                 self.update_workers,
@@ -356,10 +365,14 @@ class BeanQueue:
                     continue
         except (SystemExit, KeyboardInterrupt):
             db.rollback()
-            logger.info("Shutting down ...")
+            self._worker_update_shutdown_event.set()
             worker_update_thread.join(5)
             if metrics_server_thread is not None:
-                metrics_server_thread.join(5)
+                # set a threading event, waits until server is shutdown
+                # serve the ongoing requests
+                self._metrics_server_shutdown()
+                metrics_server_thread.join(1)
+
 
         worker.state = models.WorkerState.SHUTDOWN
         db.add(worker)
@@ -368,4 +381,4 @@ class BeanQueue:
         dispatch_service.notify(channels)
         db.commit()
 
-        logger.info("Shutdown gracefully")
+        logger.info("Shutting down ...")
