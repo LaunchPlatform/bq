@@ -196,8 +196,6 @@ For example:
 import bq
 from .my_config import config
 
-container = bq.Container()
-container.wire(packages=[bq])
 config = bq.Config(
     PROCESSOR_PACKAGES=["my_pkgs.processors"],
     DATABASE_URL=config.DATABASE_URL,
