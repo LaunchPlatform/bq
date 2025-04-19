@@ -65,8 +65,7 @@ class BeanQueue:
         self._engine = engine
         self._worker_update_shutdown_event: threading.Event = threading.Event()
         # noop if metrics thread is not started yet, shutdown if it is started
-        self._metrics_server_shutdown: typing.Callable[[], None] = lambda : None
-
+        self._metrics_server_shutdown: typing.Callable[[], None] = lambda: None
 
     def create_default_engine(self):
         return create_engine(
@@ -188,7 +187,9 @@ class BeanQueue:
                 )
                 sys.exit(0)
 
-            do_shutdown = self._worker_update_shutdown_event.wait(self.config.WORKER_HEARTBEAT_PERIOD)
+            do_shutdown = self._worker_update_shutdown_event.wait(
+                self.config.WORKER_HEARTBEAT_PERIOD
+            )
             if do_shutdown:
                 return
 
@@ -252,7 +253,7 @@ class BeanQueue:
             handler_class=WSGIRequestHandlerWithLogger,
         ) as httpd:
             # expose graceful shutdown to the main thread
-            self._metrics_server_shutdown= httpd.shutdown
+            self._metrics_server_shutdown = httpd.shutdown
             logger.info("Run metrics HTTP server on %s:%s", host, port)
             httpd.serve_forever()
 
@@ -373,7 +374,6 @@ class BeanQueue:
                 # serve the ongoing requests
                 self._metrics_server_shutdown()
                 metrics_server_thread.join(1)
-
 
         worker.state = models.WorkerState.SHUTDOWN
         db.add(worker)
