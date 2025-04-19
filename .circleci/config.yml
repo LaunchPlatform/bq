@@ -8,7 +8,7 @@ orbs:
 jobs:
   test:
     docker:
-      - image: cimg/python:3.11.9
+      - image: cimg/python:3.11.12
       - image: cimg/postgres:16.2
         environment:
           POSTGRES_USER: bq
@@ -23,7 +23,7 @@ jobs:
           command: uv run python -m pytest ./tests -svvvv
   build-and-publish:
     docker:
-      - image: cimg/python:3.11.9
+      - image: cimg/python:3.11.12
     steps:
       - checkout
       - run:
