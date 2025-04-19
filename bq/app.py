@@ -5,7 +5,6 @@ import logging
 import platform
 import sys
 import threading
-import time
 import typing
 from importlib.metadata import PackageNotFoundError
 from importlib.metadata import version
