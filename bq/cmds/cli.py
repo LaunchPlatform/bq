@@ -21,6 +21,12 @@ from .utils import load_app
     default=lambda: os.environ.get("LOG_LEVEL", "INFO"),
 )
 @click.option(
+    "--log-format",
+    type=str,
+    default="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
+    help="logging format (only used when rich log is disabled)",
+)
+@click.option(
     "--disable-rich-log",
     is_flag=True,
     help="disable rich log handler",
@@ -30,13 +36,16 @@ from .utils import load_app
 )
 @click.version_option(prog_name="bq", package_name="bq")
 @pass_env
-def cli(env: Environment, log_level: str, disable_rich_log: bool, app: str):
+def cli(
+    env: Environment, log_level: str, log_format: str, disable_rich_log: bool, app: str
+):
     env.log_level = LogLevel(log_level)
     env.app = load_app(app)
 
     if disable_rich_log:
         logging.basicConfig(
             level=LOG_LEVEL_MAP[env.log_level],
+            format=log_format,
             force=True,
         )
     else:
