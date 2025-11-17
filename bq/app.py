@@ -7,6 +7,7 @@ import sys
 import threading
 import time
 import typing
+from concurrent.futures import ThreadPoolExecutor
 from importlib.metadata import PackageNotFoundError
 from importlib.metadata import version
 from wsgiref.simple_server import make_server
@@ -256,6 +257,30 @@ class BeanQueue:
             logger.info("Run metrics HTTP server on %s:%s", host, port)
             httpd.serve_forever()
 
+    def _process_task_in_thread(
+        self,
+        task: models.Task,
+        registry: typing.Any,
+    ):
+        """Process a single task in a thread-safe manner with its own database session."""
+        db = self.make_session()
+        try:
+            logger.info(
+                "Processing task %s, channel=%s, module=%s, func=%s",
+                task.id,
+                task.channel,
+                task.module,
+                task.func_name,
+            )
+            registry.process(task, event_cls=self.event_model)
+            db.commit()
+        except Exception as e:
+            logger.exception("Error processing task %s: %s", task.id, e)
+            db.rollback()
+            raise
+        finally:
+            db.close()
+
     def process_tasks(
         self,
         channels: tuple[str, ...],
@@ -329,6 +354,17 @@ class BeanQueue:
 
         worker_id = worker.id
 
+        # Determine the number of worker threads
+        max_workers = self.config.MAX_WORKER_THREADS
+        if max_workers == 0:
+            max_workers = None  # Default to (num_cpus * 5)
+
+        # Create thread pool executor for concurrent task processing
+        executor = None
+        if max_workers != 1:
+            executor = ThreadPoolExecutor(max_workers=max_workers, thread_name_prefix="task_worker")
+            logger.info("Created thread pool executor with max_workers=%s", max_workers)
+
         try:
             while True:
                 while True:
@@ -337,21 +373,41 @@ class BeanQueue:
                         worker_id=worker_id,
                         limit=self.config.BATCH_SIZE,
                     ).all()
-                    for task in tasks:
-                        logger.info(
-                            "Processing task %s, channel=%s, module=%s, func=%s",
-                            task.id,
-                            task.channel,
-                            task.module,
-                            task.func_name,
-                        )
-                        # TODO: support processor pool and other approaches to dispatch the workload
-                        registry.process(task, event_cls=self.event_model)
+
+                    if executor is not None:
+                        # Process tasks concurrently using thread pool
+                        futures = []
+                        for task in tasks:
+                            future = executor.submit(
+                                self._process_task_in_thread,
+                                task,
+                                registry,
+                            )
+                            futures.append(future)
+
+                        # Wait for all tasks to complete
+                        for future in futures:
+                            try:
+                                future.result()  # This will raise any exception from the task
+                            except Exception as e:
+                                logger.error("Task processing failed: %s", e)
+                    else:
+                        # Process tasks sequentially (original behavior)
+                        for task in tasks:
+                            logger.info(
+                                "Processing task %s, channel=%s, module=%s, func=%s",
+                                task.id,
+                                task.channel,
+                                task.module,
+                                task.func_name,
+                            )
+                            registry.process(task, event_cls=self.event_model)
+                        if tasks:
+                            db.commit()
+
                     if not tasks:
                         # we should try to keep dispatching until we cannot find tasks
                         break
-                    else:
-                        db.commit()
                 # we will not see notifications in a transaction, need to close the transaction first before entering
                 # polling
                 db.close()
@@ -366,6 +422,13 @@ class BeanQueue:
         except (SystemExit, KeyboardInterrupt):
             db.rollback()
             logger.info("Shutting down ...")
+
+            # Shutdown the executor if it was created
+            if executor is not None:
+                logger.info("Shutting down thread pool executor...")
+                executor.shutdown(wait=True, cancel_futures=False)
+                logger.info("Thread pool executor shutdown complete")
+
             self._worker_update_shutdown_event.set()
             worker_update_thread.join(5)
             if metrics_server_thread is not None:
