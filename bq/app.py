@@ -18,6 +18,8 @@ from sqlalchemy import func
 from sqlalchemy.engine import create_engine
 from sqlalchemy.engine import Engine
 from sqlalchemy.orm import Session as DBSession
+from sqlalchemy.pool import NullPool
+from sqlalchemy.pool import QueuePool
 from sqlalchemy.pool import SingletonThreadPool
 
 from . import constants
@@ -70,9 +72,23 @@ class BeanQueue:
 
 
     def create_default_engine(self):
-        return create_engine(
-            str(self.config.DATABASE_URL), poolclass=SingletonThreadPool
-        )
+        # Use thread-safe connection pool when thread pool executor is enabled
+        if self.config.MAX_WORKER_THREADS != 1:
+            # QueuePool is thread-safe and suitable for multi-threaded usage
+            # Configure pool size based on number of worker threads
+            max_workers = self.config.MAX_WORKER_THREADS if self.config.MAX_WORKER_THREADS > 0 else 10
+            pool_size = max_workers + 5  # Extra connections for main thread and worker update thread
+            return create_engine(
+                str(self.config.DATABASE_URL),
+                poolclass=QueuePool,
+                pool_size=pool_size,
+                max_overflow=10,
+            )
+        else:
+            # SingletonThreadPool for single-threaded sequential processing
+            return create_engine(
+                str(self.config.DATABASE_URL), poolclass=SingletonThreadPool
+            )
 
     def make_session(self) -> DBSession:
         return self.session_cls(bind=self.engine)
@@ -259,12 +275,19 @@ class BeanQueue:
 
     def _process_task_in_thread(
         self,
-        task: models.Task,
+        task_id: typing.Any,
         registry: typing.Any,
     ):
-        """Process a single task in a thread-safe manner with its own database session."""
+        """Process a single task in a thread-safe manner with its own database session.
+
+        This method is called from worker threads in the thread pool. It creates its own
+        database session to avoid SQLAlchemy session conflicts between threads.
+        """
         db = self.make_session()
         try:
+            # Reload the task in this thread's session to avoid SQLAlchemy context issues
+            task = db.query(self.task_model).filter(self.task_model.id == task_id).one()
+
             logger.info(
                 "Processing task %s, channel=%s, module=%s, func=%s",
                 task.id,
@@ -275,7 +298,7 @@ class BeanQueue:
             registry.process(task, event_cls=self.event_model)
             db.commit()
         except Exception as e:
-            logger.exception("Error processing task %s: %s", task.id, e)
+            logger.exception("Error processing task %s: %s", task_id, e)
             db.rollback()
             raise
         finally:
@@ -378,9 +401,10 @@ class BeanQueue:
                         # Process tasks concurrently using thread pool
                         futures = []
                         for task in tasks:
+                            # Pass task ID instead of task object to avoid SQLAlchemy session conflicts
                             future = executor.submit(
                                 self._process_task_in_thread,
-                                task,
+                                task.id,
                                 registry,
                             )
                             futures.append(future)
