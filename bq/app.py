@@ -37,6 +37,8 @@ from .utils import load_module_var
 
 logger = logging.getLogger(__name__)
 
+HealthzCheckFunc = typing.Callable[["BeanQueue", models.Worker, DBSession], None]
+
 
 class WSGIRequestHandlerWithLogger(WSGIRequestHandler):
     logger = logging.getLogger("metrics_server")
@@ -61,12 +63,14 @@ class BeanQueue:
         worker_service_cls: typing.Type[WorkerService] = WorkerService,
         dispatch_service_cls: typing.Type[DispatchService] = DispatchService,
         engine: Engine | None = None,
+        healthz_check: HealthzCheckFunc | None = None,
     ):
         self.config = config if config is not None else Config()
         self.session_cls = session_cls
         self.worker_service_cls = worker_service_cls
         self.dispatch_service_cls = dispatch_service_cls
         self._engine = engine
+        self._healthz_check = healthz_check
         self._worker_update_shutdown_event: threading.Event = threading.Event()
         # noop if metrics thread is not started yet, shutdown if it is started
         self._metrics_server_shutdown: typing.Callable[[], None] = lambda: None
@@ -76,8 +80,14 @@ class BeanQueue:
         if self.config.MAX_WORKER_THREADS != 1:
             # QueuePool is thread-safe and suitable for multi-threaded usage
             # Configure pool size based on number of worker threads
-            max_workers = self.config.MAX_WORKER_THREADS if self.config.MAX_WORKER_THREADS > 0 else 10
-            pool_size = max_workers + 5  # Extra connections for main thread and worker update thread
+            max_workers = (
+                self.config.MAX_WORKER_THREADS
+                if self.config.MAX_WORKER_THREADS > 0
+                else 10
+            )
+            pool_size = (
+                max_workers + 5
+            )  # Extra connections for main thread and worker update thread
             return create_engine(
                 str(self.config.DATABASE_URL),
                 poolclass=QueuePool,
@@ -215,43 +225,65 @@ class BeanQueue:
             db.add(current_worker)
             db.commit()
 
+    def _run_healthz_checks(
+        self, worker: models.Worker, session: DBSession, body: dict[str, typing.Any]
+    ) -> bool:
+        try:
+            if self._healthz_check is not None:
+                self._healthz_check(self, worker, session)
+            events.healthz_check.send(self, worker=worker, session=session)
+        except Exception as exc:
+            logger.exception("Custom healthz check failed")
+            body["error"] = str(exc)
+            return False
+        return True
+
+    def _check_healthz(
+        self, worker_id: typing.Any
+    ) -> tuple[bool, dict[str, typing.Any]]:
+        db = self.make_session()
+        worker_service = self._make_worker_service(db)
+        worker = worker_service.get_worker(worker_id)
+        body: dict[str, typing.Any] = dict(status="ok", worker_id=str(worker_id))
+
+        if worker is None or worker.state != models.WorkerState.RUNNING:
+            logger.warning(
+                "Bad worker %s state %s",
+                worker_id,
+                None if worker is None else worker.state,
+            )
+            return False, dict(
+                status="internal error",
+                worker_id=str(worker_id),
+                state=None if worker is None else str(worker.state),
+            )
+
+        if not self._run_healthz_checks(worker, db, body):
+            body["status"] = "internal error"
+            return False, body
+        return True, body
+
     def _serve_http_request(
         self, worker_id: typing.Any, environ: dict, start_response: typing.Callable
     ) -> list[bytes]:
         path = environ["PATH_INFO"]
         if path == "/healthz":
-            db = self.make_session()
-            worker_service = self._make_worker_service(db)
-            worker = worker_service.get_worker(worker_id)
-            if worker is not None and worker.state == models.WorkerState.RUNNING:
+            ok, body = self._check_healthz(worker_id)
+            if ok:
                 start_response(
                     "200 OK",
                     [
                         ("Content-Type", "application/json"),
                     ],
                 )
-                return [
-                    json.dumps(dict(status="ok", worker_id=str(worker_id))).encode(
-                        "utf8"
-                    )
-                ]
             else:
-                logger.warning("Bad worker %s state %s", worker_id, worker.state)
                 start_response(
                     "500 Internal Server Error",
                     [
                         ("Content-Type", "application/json"),
                     ],
                 )
-                return [
-                    json.dumps(
-                        dict(
-                            status="internal error",
-                            worker_id=str(worker_id),
-                            state=str(worker.state),
-                        )
-                    ).encode("utf8")
-                ]
+            return [json.dumps(body).encode("utf8")]
         # TODO: add other metrics endpoints
         start_response(
             "404 NOT FOUND",
@@ -397,7 +429,9 @@ class BeanQueue:
                 if tasks:
                     logger.debug(
                         "Dispatching %d tasks (running=%d, capacity=%d)",
-                        len(tasks), len(running_futures), capacity
+                        len(tasks),
+                        len(running_futures),
+                        capacity,
                     )
 
                     for task in tasks:
@@ -513,7 +547,9 @@ class BeanQueue:
         # Create thread pool executor for concurrent task processing
         executor = None
         if max_workers != 1:
-            executor = ThreadPoolExecutor(max_workers=max_workers, thread_name_prefix="task_worker")
+            executor = ThreadPoolExecutor(
+                max_workers=max_workers, thread_name_prefix="task_worker"
+            )
             logger.info("Created thread pool executor with max_workers=%s", max_workers)
 
         try:
