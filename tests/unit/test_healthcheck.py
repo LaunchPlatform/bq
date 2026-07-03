@@ -1,9 +1,10 @@
 import json
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock
 
 import pytest
 
 from bq.app import BeanQueue
+from bq.config import Config
 
 
 def _make_environ(path: str) -> dict:
@@ -13,27 +14,17 @@ def _make_environ(path: str) -> dict:
 
 @pytest.fixture
 def bq():
-    """Create a BeanQueue with stubbed config (no real DB needed)."""
-    with patch("bq.app.Config") as MockConfig:
-        config = MockConfig.return_value
-        config.DATABASE_URL = "postgresql://test@localhost/test"
-        config.METRICS_HTTP_SERVER_INTERFACE = "127.0.0.1"
-        config.METRICS_HTTP_SERVER_PORT = 0
-        config.METRICS_HTTP_SERVER_ENABLED = False
-        config.METRICS_HTTP_SERVER_LOG_LEVEL = "WARNING"
-        config.WORKER_HEARTBEAT_PERIOD = 30
-        config.WORKER_HEARTBEAT_TIMEOUT = 60
-        config.MAX_WORKER_THREADS = 1
-        instance = BeanQueue(config=config)
-        yield instance
-
+    """Create a BeanQueue with real Config (no real DB needed)."""
+    instance = BeanQueue(config=Config(
+        DATABASE_URL="postgresql://test@localhost/test",
+    ))
+    return instance
 
 class TestHealthzEndpoint:
     """Tests for the /healthz HTTP handler."""
 
     def test_healthz_returns_200_when_healthy(self, bq):
-        bq._health_ok = True
-        bq._health_info = {"state": "RUNNING"}
+        bq._health_state = (True, {"state": "RUNNING"})
 
         start_response = MagicMock()
         result = bq._serve_http_request("42", _make_environ("/healthz"), start_response)
@@ -47,8 +38,7 @@ class TestHealthzEndpoint:
         assert body["state"] == "RUNNING"
 
     def test_healthz_returns_500_when_unhealthy(self, bq):
-        bq._health_ok = False
-        bq._health_info = {"state": "SHUTDOWN"}
+        bq._health_state = (False, {"state": "SHUTDOWN"})
 
         start_response = MagicMock()
         result = bq._serve_http_request("42", _make_environ("/healthz"), start_response)
@@ -77,8 +67,7 @@ class TestHealthzEndpoint:
 
     def test_healthz_does_not_create_db_session(self, bq):
         """The critical fix: /healthz must never touch the DB."""
-        bq._health_ok = True
-        bq._health_info = {"state": "RUNNING"}
+        bq._health_state = (True, {"state": "RUNNING"})
 
         bq.make_session = MagicMock()
         start_response = MagicMock()
@@ -108,5 +97,4 @@ class TestHealthStateInitialization:
     """Tests that _health_ok defaults correctly."""
 
     def test_defaults_to_unhealthy(self, bq):
-        assert bq._health_ok is False
-        assert bq._health_info == {}
+        assert bq._health_state == (False, {})
