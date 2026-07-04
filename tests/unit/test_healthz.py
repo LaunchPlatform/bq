@@ -1,17 +1,19 @@
-import json
+import asyncio
 from unittest.mock import MagicMock
 
 import pytest
+from starlette.testclient import TestClient
 
 from bq import events
-from bq import models
 from bq.app import BeanQueue
+from bq.metrics import MetricsExtrasNotInstalledError
+from bq.metrics import MetricsServer
+from bq.metrics import require_metrics_extras
 
 
 @pytest.fixture
 def running_worker() -> MagicMock:
     worker = MagicMock()
-    worker.state = models.WorkerState.RUNNING
     return worker
 
 
@@ -28,51 +30,25 @@ def app_with_worker(
     return app
 
 
-def test_check_healthz_ok(app_with_worker: BeanQueue, running_worker: MagicMock):
-    ok, body = app_with_worker._check_healthz("worker-1")
+@pytest.fixture
+def metrics_server(app_with_worker: BeanQueue) -> MetricsServer:
+    return MetricsServer(app_with_worker, "worker-1")
+
+
+def test_check_healthz_ok(metrics_server: MetricsServer):
+    ok, body = asyncio.run(metrics_server.check_healthz())
 
     assert ok is True
-    assert body == {"status": "ok", "worker_id": "worker-1"}
+    assert body == {"status": "ok"}
 
 
-def test_check_healthz_bad_worker_state(
-    app_with_worker: BeanQueue, running_worker: MagicMock
-):
-    running_worker.state = models.WorkerState.SHUTDOWN
-
-    ok, body = app_with_worker._check_healthz("worker-1")
-
-    assert ok is False
-    assert body == {
-        "status": "internal error",
-        "worker_id": "worker-1",
-        "state": str(models.WorkerState.SHUTDOWN),
-    }
-
-
-def test_check_healthz_init_callback_raises(app_with_worker: BeanQueue):
-    def failing_check(_app, _worker, _session):
-        raise RuntimeError("queue not ready")
-
-    app_with_worker._healthz_check = failing_check
-
-    ok, body = app_with_worker._check_healthz("worker-1")
-
-    assert ok is False
-    assert body == {
-        "status": "internal error",
-        "worker_id": "worker-1",
-        "error": "queue not ready",
-    }
-
-
-def test_check_healthz_event_receiver_raises(app_with_worker: BeanQueue):
+def test_check_healthz_event_receiver_raises(metrics_server: MetricsServer):
     @events.healthz_check.connect
     def _check(sender, worker, session):
         raise ValueError("external service down")
 
     try:
-        ok, body = app_with_worker._check_healthz("worker-1")
+        ok, body = asyncio.run(metrics_server.check_healthz())
     finally:
         events.healthz_check.disconnect(_check)
 
@@ -84,23 +60,66 @@ def test_check_healthz_event_receiver_raises(app_with_worker: BeanQueue):
     }
 
 
-def test_check_healthz_init_callback_success(app_with_worker: BeanQueue):
-    app_with_worker._healthz_check = lambda _app, _worker, _session: None
+def test_check_healthz_event_receiver_success(metrics_server: MetricsServer):
+    @events.healthz_check.connect
+    def _check(sender, worker, session):
+        return None
 
-    ok, body = app_with_worker._check_healthz("worker-1")
+    try:
+        ok, body = asyncio.run(metrics_server.check_healthz())
+    finally:
+        events.healthz_check.disconnect(_check)
 
     assert ok is True
     assert body == {"status": "ok", "worker_id": "worker-1"}
 
 
-def test_serve_http_request_healthz_response(app_with_worker: BeanQueue):
-    captured: list[tuple[str, list[tuple[str, str]]]] = []
+def test_check_healthz_async_event_receiver(metrics_server: MetricsServer):
+    @events.healthz_check.connect
+    async def _check(sender, worker, session):
+        await asyncio.sleep(0)
 
-    body = app_with_worker._serve_http_request(
-        "worker-1",
-        {"PATH_INFO": "/healthz"},
-        lambda status, headers: captured.append((status, headers)),
-    )
+    try:
+        ok, body = asyncio.run(metrics_server.check_healthz())
+    finally:
+        events.healthz_check.disconnect(_check)
 
-    assert captured[0][0] == "200 OK"
-    assert json.loads(body[0].decode()) == {"status": "ok", "worker_id": "worker-1"}
+    assert ok is True
+    assert body == {"status": "ok", "worker_id": "worker-1"}
+
+
+def test_check_healthz_mixed_sync_and_async_receivers(metrics_server: MetricsServer):
+    calls: list[str] = []
+
+    @events.healthz_check.connect
+    def _sync_check(sender, worker, session):
+        calls.append("sync")
+
+    @events.healthz_check.connect
+    async def _async_check(sender, worker, session):
+        calls.append("async")
+
+    try:
+        ok, body = asyncio.run(metrics_server.check_healthz())
+    finally:
+        events.healthz_check.disconnect(_sync_check)
+        events.healthz_check.disconnect(_async_check)
+
+    assert ok is True
+    assert body == {"status": "ok", "worker_id": "worker-1"}
+    assert calls == ["sync", "async"]
+
+
+def test_healthz_endpoint(metrics_server: MetricsServer):
+    client = TestClient(metrics_server.create_app())
+    response = client.get("/healthz")
+
+    assert response.status_code == 200
+    assert response.json() == {"status": "ok"}
+
+
+def test_require_metrics_extras_missing(monkeypatch: pytest.MonkeyPatch):
+    monkeypatch.setattr("bq.metrics.find_spec", lambda name: None)
+
+    with pytest.raises(MetricsExtrasNotInstalledError, match="beanqueue\\[metrics\\]"):
+        require_metrics_extras()
