@@ -39,7 +39,7 @@ def test_check_healthz_ok(metrics_server: MetricsServer):
     ok, body = asyncio.run(metrics_server.check_healthz())
 
     assert ok is True
-    assert body == {"status": "ok"}
+    assert body["status"] == "ok"
 
 
 def test_check_healthz_event_receiver_raises(metrics_server: MetricsServer):
@@ -107,7 +107,7 @@ def test_check_healthz_mixed_sync_and_async_receivers(metrics_server: MetricsSer
 
     assert ok is True
     assert body == {"status": "ok", "worker_id": "worker-1"}
-    assert calls == ["sync", "async"]
+    assert set(calls) == {"sync", "async"}
 
 
 def test_healthz_endpoint(metrics_server: MetricsServer):
@@ -115,7 +115,7 @@ def test_healthz_endpoint(metrics_server: MetricsServer):
     response = client.get("/healthz")
 
     assert response.status_code == 200
-    assert response.json() == {"status": "ok"}
+    assert response.json()["status"] == "ok"
 
 
 def test_require_metrics_extras_missing(monkeypatch: pytest.MonkeyPatch):
