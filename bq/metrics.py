@@ -1,6 +1,7 @@
 from __future__ import annotations
 
-import logging
+import copy
+import logging.config
 import threading
 import typing
 from collections.abc import Callable
@@ -14,10 +15,12 @@ from . import models
 
 if typing.TYPE_CHECKING:
     from .app import BeanQueue
+    from .config import Config
 
 logger = logging.getLogger(__name__)
 
 METRICS_EXTRA = "metrics"
+METRICS_SERVER_LOGGER = "metrics_server"
 
 
 def _healthz_sync_wrapper(
@@ -45,6 +48,31 @@ def require_metrics_extras() -> None:
             f"({', '.join(missing)}). "
             f"Install them with: pip install beanqueue[{METRICS_EXTRA}]"
         )
+
+
+def default_metrics_log_config(log_level: int) -> dict[str, typing.Any]:
+    from uvicorn.config import LOGGING_CONFIG
+
+    level_name = logging.getLevelName(log_level)
+    info_level = logging.getLevelName(logging.INFO)
+    log_config = copy.deepcopy(LOGGING_CONFIG)
+    log_config["handlers"]["access"]["stream"] = "ext://sys.stderr"
+    log_config["loggers"]["uvicorn"]["level"] = level_name
+    log_config["loggers"]["uvicorn.error"]["level"] = level_name
+    # Access lines are logged at INFO by uvicorn regardless of server log level.
+    log_config["loggers"]["uvicorn.access"]["level"] = info_level
+    log_config["loggers"][METRICS_SERVER_LOGGER] = {
+        "handlers": ["default"],
+        "level": info_level,
+        "propagate": False,
+    }
+    return log_config
+
+
+def resolve_metrics_log_config(config: Config) -> dict[str, typing.Any]:
+    if config.METRICS_HTTP_SERVER_LOG_CONFIG is not None:
+        return config.METRICS_HTTP_SERVER_LOG_CONFIG
+    return default_metrics_log_config(config.METRICS_HTTP_SERVER_LOG_LEVEL)
 
 
 class MetricsServer:
@@ -111,22 +139,25 @@ class MetricsServer:
         require_metrics_extras()
         host = self._bq.config.METRICS_HTTP_SERVER_INTERFACE
         port = self._bq.config.METRICS_HTTP_SERVER_PORT
-        log_level = logging.getLevelName(
-            self._bq.config.METRICS_HTTP_SERVER_LOG_LEVEL
-        ).lower()
+        log_config = resolve_metrics_log_config(self._bq.config)
+        logging.config.dictConfig(log_config)
 
         app = self.create_app()
+        # log_level is intentionally omitted: uvicorn would override logger levels
+        # from log_config (including uvicorn.access) after configure_logging().
         config = uvicorn.Config(
             app,
             host=host,
             port=port,
-            log_level=log_level,
+            log_config=log_config,
             access_log=True,
         )
         self._server = uvicorn.Server(config)
 
         def run() -> None:
-            logger.info("Run metrics HTTP server on %s:%s", host, port)
+            logging.getLogger(METRICS_SERVER_LOGGER).info(
+                "Run metrics HTTP server on %s:%s", host, port
+            )
             self._server.run()
 
         self._thread = threading.Thread(target=run, name="metrics_server")

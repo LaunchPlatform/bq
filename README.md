@@ -250,6 +250,39 @@ Relevant settings (see [bq/config.py](bq/config.py)):
 | `METRICS_HTTP_SERVER_ENABLED` | `BQ_METRICS_HTTP_SERVER_ENABLED` | `False` |
 | `METRICS_HTTP_SERVER_INTERFACE` | `BQ_METRICS_HTTP_SERVER_INTERFACE` | `""` (all interfaces) |
 | `METRICS_HTTP_SERVER_PORT` | `BQ_METRICS_HTTP_SERVER_PORT` | `8000` |
+| `METRICS_HTTP_SERVER_LOG_LEVEL` | `BQ_METRICS_HTTP_SERVER_LOG_LEVEL` | `30` (`WARNING`) |
+
+Access requests are logged at INFO via `uvicorn.access` (visible even when `METRICS_HTTP_SERVER_LOG_LEVEL` is `WARNING`).
+BeanQueue also uses a `metrics_server` logger for its own messages.
+Override the entire logging setup by passing a [logging.config](https://docs.python.org/3/library/logging.config.html#logging-config-dictschema) dict via `METRICS_HTTP_SERVER_LOG_CONFIG` (or `BQ_METRICS_HTTP_SERVER_LOG_CONFIG` as JSON):
+
+```python
+import bq
+
+config = bq.Config(
+    METRICS_HTTP_SERVER_ENABLED=True,
+    METRICS_HTTP_SERVER_LOG_CONFIG={
+        "version": 1,
+        "disable_existing_loggers": False,
+        "handlers": {
+            "default": {
+                "class": "logging.StreamHandler",
+                "formatter": "default",
+            }
+        },
+        "formatters": {
+            "default": {
+                "format": "%(asctime)s %(name)s %(levelname)s %(message)s",
+            }
+        },
+        "loggers": {
+            "metrics_server": {"handlers": ["default"], "level": "INFO"},
+            "uvicorn.access": {"handlers": ["default"], "level": "INFO"},
+        },
+    },
+)
+app = bq.BeanQueue(config=config)
+```
 
 #### Custom health checks
 
