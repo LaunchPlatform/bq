@@ -1,3 +1,4 @@
+import json
 import typing
 
 from pydantic import Field
@@ -40,7 +41,7 @@ class Config(BaseSettings):
     EVENT_MODEL: str | None = "bq.Event"
 
     # Enable metrics HTTP server
-    METRICS_HTTP_SERVER_ENABLED: bool = True
+    METRICS_HTTP_SERVER_ENABLED: bool = False
 
     # the metrics http server interface to listen
     METRICS_HTTP_SERVER_INTERFACE: str = ""
@@ -51,12 +52,26 @@ class Config(BaseSettings):
     # default log level for metrics http server
     METRICS_HTTP_SERVER_LOG_LEVEL: int = 30
 
+    # Optional logging.config dict for the metrics HTTP server (uvicorn).
+    # When unset, a default config is used. Pass a dict programmatically or
+    # JSON via BQ_METRICS_HTTP_SERVER_LOG_CONFIG.
+    METRICS_HTTP_SERVER_LOG_CONFIG: dict[str, typing.Any] | None = None
+
     POSTGRES_SERVER: str = "localhost"
     POSTGRES_USER: str = "bq"
     POSTGRES_PASSWORD: str = ""
     POSTGRES_DB: str = "bq"
     # The URL of postgresql database to connect
     DATABASE_URL: typing.Optional[PostgresDsn] = None
+
+    @field_validator("METRICS_HTTP_SERVER_LOG_CONFIG", mode="before")
+    @classmethod
+    def parse_metrics_log_config(cls, v: typing.Any) -> typing.Any:
+        if v is None or isinstance(v, dict):
+            return v
+        if isinstance(v, str):
+            return json.loads(v)
+        raise ValueError("Unexpected METRICS_HTTP_SERVER_LOG_CONFIG type")
 
     @field_validator("DATABASE_URL", mode="before")
     def assemble_db_connection(

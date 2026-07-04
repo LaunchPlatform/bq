@@ -1,6 +1,5 @@
 import functools
 import importlib
-import json
 import logging
 import platform
 import sys
@@ -11,15 +10,12 @@ from concurrent.futures import ThreadPoolExecutor
 from concurrent.futures import wait as futures_wait
 from importlib.metadata import PackageNotFoundError
 from importlib.metadata import version
-from wsgiref.simple_server import make_server
-from wsgiref.simple_server import WSGIRequestHandler
 
 import venusian
 from sqlalchemy import func
 from sqlalchemy.engine import create_engine
 from sqlalchemy.engine import Engine
 from sqlalchemy.orm import Session as DBSession
-from sqlalchemy.pool import NullPool
 from sqlalchemy.pool import QueuePool
 from sqlalchemy.pool import SingletonThreadPool
 
@@ -28,6 +24,7 @@ from . import events
 from . import models
 from .config import Config
 from .db.session import SessionMaker
+from .metrics import MetricsServer
 from .processors.processor import Processor
 from .processors.processor import ProcessorHelper
 from .processors.registry import collect
@@ -36,21 +33,6 @@ from .services.worker import WorkerService
 from .utils import load_module_var
 
 logger = logging.getLogger(__name__)
-
-
-class WSGIRequestHandlerWithLogger(WSGIRequestHandler):
-    logger = logging.getLogger("metrics_server")
-
-    def log_message(self, format, *args):
-        message = format % args
-        self.logger.info(
-            "%s - - [%s] %s\n"
-            % (
-                self.address_string(),
-                self.log_date_time_string(),
-                message.translate(self._control_char_table),
-            )
-        )
 
 
 class BeanQueue:
@@ -68,16 +50,21 @@ class BeanQueue:
         self.dispatch_service_cls = dispatch_service_cls
         self._engine = engine
         self._worker_update_shutdown_event: threading.Event = threading.Event()
-        # noop if metrics thread is not started yet, shutdown if it is started
-        self._metrics_server_shutdown: typing.Callable[[], None] = lambda: None
+        self._metrics_server: MetricsServer | None = None
 
     def create_default_engine(self):
         # Use thread-safe connection pool when thread pool executor is enabled
         if self.config.MAX_WORKER_THREADS != 1:
             # QueuePool is thread-safe and suitable for multi-threaded usage
             # Configure pool size based on number of worker threads
-            max_workers = self.config.MAX_WORKER_THREADS if self.config.MAX_WORKER_THREADS > 0 else 10
-            pool_size = max_workers + 5  # Extra connections for main thread and worker update thread
+            max_workers = (
+                self.config.MAX_WORKER_THREADS
+                if self.config.MAX_WORKER_THREADS > 0
+                else 10
+            )
+            pool_size = (
+                max_workers + 5
+            )  # Extra connections for main thread and worker update thread
             return create_engine(
                 str(self.config.DATABASE_URL),
                 poolclass=QueuePool,
@@ -215,66 +202,6 @@ class BeanQueue:
             db.add(current_worker)
             db.commit()
 
-    def _serve_http_request(
-        self, worker_id: typing.Any, environ: dict, start_response: typing.Callable
-    ) -> list[bytes]:
-        path = environ["PATH_INFO"]
-        if path == "/healthz":
-            db = self.make_session()
-            worker_service = self._make_worker_service(db)
-            worker = worker_service.get_worker(worker_id)
-            if worker is not None and worker.state == models.WorkerState.RUNNING:
-                start_response(
-                    "200 OK",
-                    [
-                        ("Content-Type", "application/json"),
-                    ],
-                )
-                return [
-                    json.dumps(dict(status="ok", worker_id=str(worker_id))).encode(
-                        "utf8"
-                    )
-                ]
-            else:
-                logger.warning("Bad worker %s state %s", worker_id, worker.state)
-                start_response(
-                    "500 Internal Server Error",
-                    [
-                        ("Content-Type", "application/json"),
-                    ],
-                )
-                return [
-                    json.dumps(
-                        dict(
-                            status="internal error",
-                            worker_id=str(worker_id),
-                            state=str(worker.state),
-                        )
-                    ).encode("utf8")
-                ]
-        # TODO: add other metrics endpoints
-        start_response(
-            "404 NOT FOUND",
-            [
-                ("Content-Type", "application/json"),
-            ],
-        )
-        return [json.dumps(dict(status="not found")).encode("utf8")]
-
-    def run_metrics_http_server(self, worker_id: typing.Any):
-        host = self.config.METRICS_HTTP_SERVER_INTERFACE
-        port = self.config.METRICS_HTTP_SERVER_PORT
-        with make_server(
-            host,
-            port,
-            functools.partial(self._serve_http_request, worker_id),
-            handler_class=WSGIRequestHandlerWithLogger,
-        ) as httpd:
-            # expose graceful shutdown to the main thread
-            self._metrics_server_shutdown = httpd.shutdown
-            logger.info("Run metrics HTTP server on %s:%s", host, port)
-            httpd.serve_forever()
-
     def _process_task_in_thread(
         self,
         task_id: typing.Any,
@@ -397,7 +324,9 @@ class BeanQueue:
                 if tasks:
                     logger.debug(
                         "Dispatching %d tasks (running=%d, capacity=%d)",
-                        len(tasks), len(running_futures), capacity
+                        len(tasks),
+                        len(running_futures),
+                        capacity,
                     )
 
                     for task in tasks:
@@ -476,17 +405,9 @@ class BeanQueue:
         dispatch_service.listen(channels)
         db.commit()
 
-        metrics_server_thread = None
         if self.config.METRICS_HTTP_SERVER_ENABLED:
-            WSGIRequestHandlerWithLogger.logger.setLevel(
-                self.config.METRICS_HTTP_SERVER_LOG_LEVEL
-            )
-            metrics_server_thread = threading.Thread(
-                target=self.run_metrics_http_server,
-                args=(worker.id,),
-            )
-            metrics_server_thread.daemon = True
-            metrics_server_thread.start()
+            self._metrics_server = MetricsServer(self, worker.id)
+            self._metrics_server.start()
 
         logger.info("Created worker %s, name=%s", worker.id, worker.name)
         events.worker_init.send(self, worker=worker)
@@ -513,7 +434,9 @@ class BeanQueue:
         # Create thread pool executor for concurrent task processing
         executor = None
         if max_workers != 1:
-            executor = ThreadPoolExecutor(max_workers=max_workers, thread_name_prefix="task_worker")
+            executor = ThreadPoolExecutor(
+                max_workers=max_workers, thread_name_prefix="task_worker"
+            )
             logger.info("Created thread pool executor with max_workers=%s", max_workers)
 
         try:
@@ -548,11 +471,8 @@ class BeanQueue:
 
             self._worker_update_shutdown_event.set()
             worker_update_thread.join(5)
-            if metrics_server_thread is not None:
-                # set a threading event, waits until server is shutdown
-                # serve the ongoing requests
-                self._metrics_server_shutdown()
-                metrics_server_thread.join(1)
+            if self._metrics_server is not None:
+                self._metrics_server.shutdown()
 
         worker.state = models.WorkerState.SHUTDOWN
         db.add(worker)
