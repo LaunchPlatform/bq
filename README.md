@@ -14,6 +14,7 @@ BeanQueue, a lightweight Python task queue framework based on [SQLAlchemy](https
 - **Retry**: Built-in and customizable retry policies
 - **Schedule**: Schedule tasks to run later
 - **Worker heartbeat and auto-reschedule**: Each worker keeps updating heartbeat, if one is found dead, the others will reschedule the tasks
+- **Custom health checks**: Optional HTTP `/healthz` endpoint with pluggable checks via Blinker signals
 - **Customizable**: Custom Task, Worker and Event models. Use it as a library and build your own work queue
 
 ## Install
@@ -21,6 +22,20 @@ BeanQueue, a lightweight Python task queue framework based on [SQLAlchemy](https
 ```bash
 pip install beanqueue
 ```
+
+To enable the optional metrics HTTP server (currently `/healthz` only), install with the `metrics` extra:
+
+```bash
+pip install "beanqueue[metrics]"
+```
+
+## Upgrading to 2.0
+
+BeanQueue 2.0 includes breaking changes around the metrics HTTP server and custom health checks:
+
+- **`METRICS_HTTP_SERVER_ENABLED` defaults to `False`** (it was `True` in 1.x). Set `BQ_METRICS_HTTP_SERVER_ENABLED=true` to turn the server back on.
+- **The metrics server requires optional dependencies.** Install `beanqueue[metrics]` (`starlette` and `uvicorn`). Without them, enabling the server raises an error at startup.
+- **Custom health checks use the `healthz_check` event** (`bq.events.healthz_check`) instead of a `healthz_check` argument on `bq.BeanQueue`. Connect sync or async receivers to the signal.
 
 ## Usage
 
@@ -215,6 +230,58 @@ Or if you prefer to define your own process command, you can also call `process_
 ```python
 app.process_tasks(channels=("images",))
 ```
+
+### Health check and metrics HTTP server
+
+When enabled, each worker starts a small HTTP server (Starlette + Uvicorn) for operational endpoints.
+Today this only exposes `GET /healthz`, which returns `{"status": "ok"}` by default.
+
+Enable it with the `metrics` extra installed and configuration:
+
+```bash
+pip install "beanqueue[metrics]"
+BQ_METRICS_HTTP_SERVER_ENABLED=true bq process images
+```
+
+Relevant settings (see [bq/config.py](bq/config.py)):
+
+| Setting | Env var | Default |
+| --- | --- | --- |
+| `METRICS_HTTP_SERVER_ENABLED` | `BQ_METRICS_HTTP_SERVER_ENABLED` | `False` |
+| `METRICS_HTTP_SERVER_INTERFACE` | `BQ_METRICS_HTTP_SERVER_INTERFACE` | `""` (all interfaces) |
+| `METRICS_HTTP_SERVER_PORT` | `BQ_METRICS_HTTP_SERVER_PORT` | `8000` |
+
+#### Custom health checks
+
+Register additional checks by connecting receivers to `bq.events.healthz_check`.
+If no receivers are connected, `/healthz` returns OK without touching the database.
+
+With receivers connected, BeanQueue loads the current worker and passes a database `session` to each check.
+Receivers may be synchronous or asynchronous; both can be mixed on the same signal.
+
+```python
+from sqlalchemy import text
+from sqlalchemy.orm import Session
+
+import bq
+from bq import events
+
+app = bq.BeanQueue()
+
+
+@events.healthz_check.connect
+def check_database(sender: bq.BeanQueue, worker, session: Session):
+    session.execute(text("SELECT 1"))
+
+
+@events.healthz_check.connect
+async def check_external_service(sender: bq.BeanQueue, worker, session: Session):
+    # async HTTP call, etc.
+    ...
+```
+
+Receiver signature must accept the keyword arguments you need, for example `(sender, worker, session)`, or use `(sender, **kwargs)`.
+If a check raises an exception, `/healthz` responds with HTTP 500 and a JSON body containing the error message.
 
 ### Define your own tables
 

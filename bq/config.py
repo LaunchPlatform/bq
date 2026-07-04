@@ -40,7 +40,7 @@ class Config(BaseSettings):
     EVENT_MODEL: str | None = "bq.Event"
 
     # Enable metrics HTTP server
-    METRICS_HTTP_SERVER_ENABLED: bool = True
+    METRICS_HTTP_SERVER_ENABLED: bool = False
 
     # the metrics http server interface to listen
     METRICS_HTTP_SERVER_INTERFACE: str = ""
