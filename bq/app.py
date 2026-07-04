@@ -16,7 +16,6 @@ from sqlalchemy import func
 from sqlalchemy.engine import create_engine
 from sqlalchemy.engine import Engine
 from sqlalchemy.orm import Session as DBSession
-from sqlalchemy.pool import NullPool
 from sqlalchemy.pool import QueuePool
 from sqlalchemy.pool import SingletonThreadPool
 
