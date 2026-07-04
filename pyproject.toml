@@ -1,6 +1,6 @@
 [project]
 name = "beanqueue"
-version = "1.2.0"
+version = "2.0.0rc0"
 description = "BeanQueue or BQ for short, PostgreSQL SKIP LOCK and SQLAlchemy based worker queue library"
 authors = [{ name = "Fang-Pen Lin", email = "fangpen@launchplatform.com" }]
 requires-python = ">=3.11,<4"
