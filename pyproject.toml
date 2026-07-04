@@ -20,7 +20,7 @@ bq = "bq.cmds.main:cli"
 
 [project.optional-dependencies]
 metrics = [
-    "starlette>=0.37.2,<1",
+    "starlette>=0.27,<2",
     "uvicorn>=0.30.0,<1",
 ]
 
@@ -28,7 +28,7 @@ metrics = [
 dev = [
     "psycopg2-binary>=2.9.10,<3",
     "pytest-factoryboy>=2.7.0,<3",
-    "starlette>=0.37.2,<1",
+    "starlette>=0.27,<2",
     "uvicorn>=0.30.0,<1",
     "httpx>=0.27.0,<1",
 ]
