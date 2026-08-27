@@ -3,6 +3,7 @@ import typing
 
 from sqlalchemy import func
 from sqlalchemy import inspect
+from sqlalchemy import select
 from sqlalchemy.orm import object_session
 
 from .. import models
@@ -12,11 +13,13 @@ def get_failure_times(task: models.Task) -> int:
     db = object_session(task)
     task_info = inspect(task.__class__)
     event_cls = task_info.attrs["events"].entity.class_
-    return (
-        db.query(event_cls)
-        .filter(event_cls.task == task)
-        .filter(event_cls.type == models.EventType.FAILED_RETRY_SCHEDULED)
-    ).count()
+    count = db.scalar(
+        select(func.count())
+        .select_from(event_cls)
+        .where(event_cls.task == task)
+        .where(event_cls.type == models.EventType.FAILED_RETRY_SCHEDULED)
+    )
+    return count or 0
 
 
 class DelayRetry:

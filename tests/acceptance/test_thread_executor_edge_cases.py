@@ -1,4 +1,5 @@
-"""Additional acceptance tests for thread executor edge cases and robustness."""
+"""Additional acceptance tests for concurrent worker edge cases and robustness."""
+import asyncio
 import datetime
 import time
 from multiprocessing import Process
@@ -18,15 +19,15 @@ def run_process_cmd_with_threads(
     batch_size: int,
     poll_timeout: int = 60,
 ):
-    """Run worker process with thread pool executor enabled."""
+    """Run worker process with concurrent task processing enabled."""
     app.config = Config(
         PROCESSOR_PACKAGES=["tests.acceptance.fixtures.thread_processors"],
         DATABASE_URL=db_url,
-        MAX_WORKER_THREADS=max_workers,
+        MAX_CONCURRENT_TASKS=max_workers,
         BATCH_SIZE=batch_size,
         POLL_TIMEOUT=poll_timeout,
     )
-    app.process_tasks(channels=("thread-tests",))
+    asyncio.run(app.process_tasks(channels=("thread-tests",)))
 
 
 def test_thread_executor_with_failing_tasks(db: Session, db_url: str):

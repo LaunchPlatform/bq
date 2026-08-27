@@ -1,5 +1,5 @@
 import pytest
-from sqlalchemy.orm import Session
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from .. import fixtures
 from .conftest import processor_module
@@ -46,7 +46,8 @@ def test_collect(registry: Registry, processor_module: str):
         ),
     ],
 )
-def test_registry_process(
-    db: Session, registry: Registry, task: models.Task, expected: str
+async def test_registry_process(
+    async_db: AsyncSession, registry: Registry, task: models.Task, expected: str
 ):
-    assert registry.process(task) == expected
+    task = await async_db.get(models.Task, task.id)
+    assert await registry.process(task) == expected

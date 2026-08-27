@@ -1,15 +1,17 @@
 import dataclasses
-import select
 import typing
 import uuid
 
+import psycopg
 from sqlalchemy import func
 from sqlalchemy import null
 from sqlalchemy import or_
-from sqlalchemy.orm import Query
+from sqlalchemy import select
+from sqlalchemy import update
+from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.sql import Select
 
 from .. import models
-from ..db.session import Session
 
 
 @dataclasses.dataclass(frozen=True)
@@ -20,21 +22,22 @@ class Notification:
 
 
 class DispatchService:
-    def __init__(self, session: Session, task_model: typing.Type = models.Task):
+    def __init__(self, session: AsyncSession, task_model: typing.Type = models.Task):
         self.session = session
         self.task_model: typing.Type[models.Task] = task_model
+        self._listen_conn: psycopg.AsyncConnection | None = None
 
     def make_task_query(
         self,
         channels: typing.Sequence[str],
         limit: int = 1,
         now: typing.Any = func.now(),
-    ) -> Query:
+    ) -> Select:
         return (
-            self.session.query(self.task_model.id)
-            .filter(self.task_model.channel.in_(channels))
-            .filter(self.task_model.state == models.TaskState.PENDING)
-            .filter(
+            select(self.task_model.id)
+            .where(self.task_model.channel.in_(channels))
+            .where(self.task_model.state == models.TaskState.PENDING)
+            .where(
                 or_(
                     self.task_model.scheduled_at.is_(null()),
                     now >= self.task_model.scheduled_at,
@@ -47,7 +50,7 @@ class DispatchService:
 
     def make_update_query(self, task_query: typing.Any, worker_id: typing.Any):
         return (
-            self.task_model.__table__.update()
+            update(self.task_model)
             .where(self.task_model.id.in_(task_query))
             .values(
                 state=models.TaskState.PROCESSING,
@@ -56,62 +59,77 @@ class DispatchService:
             .returning(self.task_model.id)
         )
 
-    def dispatch(
+    async def dispatch(
         self,
         channels: typing.Sequence[str],
         worker_id: uuid.UUID,
         limit: int = 1,
         now: typing.Any = func.now(),
-    ) -> Query:
+    ) -> list[models.Task]:
         task_query = self.make_task_query(channels, limit=limit, now=now)
         task_subquery = task_query.scalar_subquery()
-        task_ids = [
-            item[0]
-            for item in self.session.execute(
-                self.make_update_query(task_subquery, worker_id=worker_id)
-            )
-        ]
-        # TODO: ideally returning with (self.task_model) should return the whole model, but SQLAlchemy is returning
-        #       it columns in rows. We can save a round trip if we can find out how to solve this
-        return self.session.query(self.task_model).filter(
-            self.task_model.id.in_(task_ids)
+        result = await self.session.execute(
+            self.make_update_query(task_subquery, worker_id=worker_id)
         )
+        task_ids = [item[0] for item in result]
+        if not task_ids:
+            return []
+        tasks = await self.session.scalars(
+            select(self.task_model).where(self.task_model.id.in_(task_ids))
+        )
+        return list(tasks.all())
 
-    def listen(self, channels: typing.Sequence[str]):
-        conn = self.session.connection()
+    def _quote_channel(self, channel: str) -> str:
+        bind = self.session.bind
+        return bind.dialect.identifier_preparer.quote_identifier(channel)
+
+    def _listen_conninfo(self) -> str:
+        url = self.session.bind.url
+        return url.set(drivername="postgresql").render_as_string(hide_password=False)
+
+    async def listen(self, channels: typing.Sequence[str]):
+        if self._listen_conn is None or self._listen_conn.closed:
+            self._listen_conn = await psycopg.AsyncConnection.connect(
+                self._listen_conninfo(),
+                autocommit=True,
+            )
         for channel in channels:
-            quoted_channel = conn.dialect.identifier_preparer.quote_identifier(channel)
-            conn.exec_driver_sql(f"LISTEN {quoted_channel}")
+            quoted_channel = self._quote_channel(channel)
+            await self._listen_conn.execute(f"LISTEN {quoted_channel}")
 
-    def poll(self, timeout: int = 5) -> typing.Generator[Notification, None, None]:
-        conn = self.session.connection()
-        driver_conn = conn.connection.driver_connection
+    async def poll(self, timeout: int = 5) -> list[Notification]:
+        if self._listen_conn is None:
+            raise RuntimeError("listen() must be called before poll()")
 
-        def pop_notifies():
-            while driver_conn.notifies:
-                notify = driver_conn.notifies.pop(0)
-                yield Notification(
+        notifications: list[Notification] = []
+        async for notify in self._listen_conn.notifies(timeout=timeout, stop_after=1):
+            notifications.append(
+                Notification(
                     pid=notify.pid,
                     channel=notify.channel,
                     payload=notify.payload,
                 )
+            )
+        if not notifications:
+            raise TimeoutError("Timeout waiting for new notifications")
 
-        # poll first to see if there's anything already
-        driver_conn.poll()
-        if driver_conn.notifies:
-            yield from pop_notifies()
-        else:
-            # okay, nothing, let's select and wait for new stuff
-            if select.select([driver_conn], [], [], timeout) == ([], [], []):
-                # nope, nothing, times out
-                raise TimeoutError("Timeout waiting for new notifications")
-            else:
-                # yep, we got something
-                driver_conn.poll()
-                yield from pop_notifies()
+        async for notify in self._listen_conn.notifies(timeout=0):
+            notifications.append(
+                Notification(
+                    pid=notify.pid,
+                    channel=notify.channel,
+                    payload=notify.payload,
+                )
+            )
+        return notifications
 
-    def notify(self, channels: typing.Sequence[str]):
-        conn = self.session.connection()
+    async def notify(self, channels: typing.Sequence[str]):
+        conn = await self.session.connection()
         for channel in channels:
             quoted_channel = conn.dialect.identifier_preparer.quote_identifier(channel)
-            conn.exec_driver_sql(f"NOTIFY {quoted_channel}")
+            await conn.exec_driver_sql(f"NOTIFY {quoted_channel}")
+
+    async def aclose(self):
+        if self._listen_conn is not None and not self._listen_conn.closed:
+            await self._listen_conn.close()
+        self._listen_conn = None

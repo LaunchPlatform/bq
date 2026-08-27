@@ -1,3 +1,4 @@
+import asyncio
 import datetime
 import threading
 import time
@@ -12,18 +13,17 @@ from .fixtures.thread_processors import concurrent_task
 from .fixtures.thread_processors import timed_task
 from bq import models
 from bq.config import Config
-from bq.db.session import Session as BqSession
 
 
 def run_process_cmd_with_threads(db_url: str, max_workers: int, batch_size: int):
-    """Run worker process with thread pool executor enabled."""
+    """Run worker process with concurrent task processing enabled."""
     app.config = Config(
         PROCESSOR_PACKAGES=["tests.acceptance.fixtures.thread_processors"],
         DATABASE_URL=db_url,
-        MAX_WORKER_THREADS=max_workers,
+        MAX_CONCURRENT_TASKS=max_workers,
         BATCH_SIZE=batch_size,
     )
-    app.process_tasks(channels=("thread-tests",))
+    asyncio.run(app.process_tasks(channels=("thread-tests",)))
 
 
 def test_thread_executor_with_multiple_threads(db: Session, db_url: str):
@@ -351,7 +351,7 @@ def test_tasks_from_separate_connections_run_concurrently(db: Session, db_url: s
 
         # Create a new engine and session - simulates a separate web request
         engine = create_engine(db_url)
-        session = BqSession(bind=engine)
+        session = Session(bind=engine)
         try:
             task = timed_task.run(task_num=task_num, sleep_time=sleep_time)
             session.add(task)
@@ -473,7 +473,7 @@ def test_staggered_task_arrival_proves_concurrency(db: Session, db_url: str):
         time.sleep(delay)
 
         engine = create_engine(db_url)
-        session = BqSession(bind=engine)
+        session = Session(bind=engine)
         try:
             task = timed_task.run(task_num=task_num, sleep_time=sleep_time)
             session.add(task)

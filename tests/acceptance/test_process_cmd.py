@@ -1,3 +1,4 @@
+import asyncio
 import datetime
 import time
 from multiprocessing import Process
@@ -15,7 +16,7 @@ def run_process_cmd(db_url: str):
         PROCESSOR_PACKAGES=["tests.acceptance.fixtures.processors"],
         DATABASE_URL=db_url,
     )
-    app.process_tasks(channels=("acceptance-tests",))
+    asyncio.run(app.process_tasks(channels=("acceptance-tests",)))
 
 
 def test_process_cmd(db: Session, db_url: str):

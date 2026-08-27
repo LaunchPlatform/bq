@@ -4,6 +4,7 @@ Realistic integration tests that mirror actual production usage patterns.
 These tests are designed to catch issues that might pass in isolated unit tests
 but fail in real integrations (like the tape app).
 """
+import asyncio
 import datetime
 import threading
 import time
@@ -20,17 +21,17 @@ from bq.config import Config
 
 def run_single_worker_with_config(db_url: str, max_workers: int, batch_size: int, duration: int = 30):
     """
-    Run a single worker process with specific thread configuration.
-    This mirrors how production apps run: one worker process with threading enabled.
+    Run a single worker process with specific concurrency configuration.
+    This mirrors how production apps run: one worker process with concurrent tasks.
     """
     app.config = Config(
         PROCESSOR_PACKAGES=["tests.acceptance.fixtures.thread_processors"],
         DATABASE_URL=db_url,
-        MAX_WORKER_THREADS=max_workers,
+        MAX_CONCURRENT_TASKS=max_workers,
         BATCH_SIZE=batch_size,
         POLL_TIMEOUT=duration,  # Will exit after this timeout if no tasks
     )
-    app.process_tasks(channels=("thread-tests",))
+    asyncio.run(app.process_tasks(channels=("thread-tests",)))
 
 
 def test_default_config_is_serial(db: Session, db_url: str):
@@ -273,14 +274,10 @@ def test_thread_names_and_logging(db: Session, db_url: str):
     # With 3 threads and 6 tasks, we should see multiple thread names
     assert len(unique_threads) >= 2, f"Expected at least 2 different threads, but only saw: {unique_threads}"
 
-    # Thread names should contain "task_worker" prefix
-    for name in thread_names:
-        assert "task_worker" in name, f"Unexpected thread name: {name}"
-
     proc.kill()
     proc.join(3)
 
-    print(f"✓ Thread names verified: {len(unique_threads)} unique threads used: {unique_threads}")
+    print(f"✓ Concurrent workers verified: {len(unique_threads)} unique threads used: {unique_threads}")
 
 
 def test_compare_serial_vs_concurrent(db: Session, db_url: str):

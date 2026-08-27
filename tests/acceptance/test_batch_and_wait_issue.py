@@ -19,6 +19,7 @@ New behavior (continuous feeding):
 - Dispatch new tasks as soon as capacity is available
 - Keep all threads busy
 """
+import asyncio
 import datetime
 import time
 from multiprocessing import Process
@@ -35,11 +36,11 @@ def run_worker_small_batch(db_url: str, max_workers: int, batch_size: int):
     app.config = Config(
         PROCESSOR_PACKAGES=["tests.acceptance.fixtures.thread_processors"],
         DATABASE_URL=db_url,
-        MAX_WORKER_THREADS=max_workers,
+        MAX_CONCURRENT_TASKS=max_workers,
         BATCH_SIZE=batch_size,  # Small batch size
         POLL_TIMEOUT=20,
     )
-    app.process_tasks(channels=("thread-tests",))
+    asyncio.run(app.process_tasks(channels=("thread-tests",)))
 
 
 def test_small_batch_size_with_many_threads(db: Session, db_url: str):

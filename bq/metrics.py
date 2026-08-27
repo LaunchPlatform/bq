@@ -1,14 +1,14 @@
 from __future__ import annotations
 
+import asyncio
 import copy
 import logging.config
-import threading
 import typing
 from collections.abc import Callable
 from collections.abc import Coroutine
 from importlib.util import find_spec
 
-from sqlalchemy.orm import Session as DBSession
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from . import events
 from . import models
@@ -81,13 +81,13 @@ class MetricsServer:
         self._bq = bq
         self._worker_id = worker_id
         self._server = None
-        self._thread: threading.Thread | None = None
+        self._serve_task: asyncio.Task | None = None
 
     def _has_custom_health_checks(self) -> bool:
         return bool(events.healthz_check.receivers)
 
     async def _run_healthz_checks(
-        self, worker: models.Worker, session: DBSession, body: dict[str, typing.Any]
+        self, worker: models.Worker, session: AsyncSession, body: dict[str, typing.Any]
     ) -> bool:
         try:
             await events.healthz_check.send_async(
@@ -108,9 +108,9 @@ class MetricsServer:
         if not self._has_custom_health_checks():
             return True, body
 
-        with self._bq.make_session() as db:
+        async with self._bq.make_session() as db:
             worker_service = self._bq._make_worker_service(db)
-            worker = worker_service.get_worker(self._worker_id)
+            worker = await worker_service.get_worker(self._worker_id)
             body["worker_id"] = str(self._worker_id)
 
             if not await self._run_healthz_checks(worker, db, body):
@@ -133,7 +133,7 @@ class MetricsServer:
             ]
         )
 
-    def start(self) -> None:
+    async def start(self) -> None:
         import uvicorn
 
         require_metrics_extras()
@@ -153,19 +153,24 @@ class MetricsServer:
             access_log=True,
         )
         self._server = uvicorn.Server(config)
+        # Avoid installing process-wide signal handlers when embedded in the worker loop.
+        self._server.install_signal_handlers = lambda: None
+        logging.getLogger(METRICS_SERVER_LOGGER).info(
+            "Run metrics HTTP server on %s:%s", host, port
+        )
+        self._serve_task = asyncio.create_task(
+            self._server.serve(), name="metrics_server"
+        )
 
-        def run() -> None:
-            logging.getLogger(METRICS_SERVER_LOGGER).info(
-                "Run metrics HTTP server on %s:%s", host, port
-            )
-            self._server.run()
-
-        self._thread = threading.Thread(target=run, name="metrics_server")
-        self._thread.daemon = True
-        self._thread.start()
-
-    def shutdown(self) -> None:
+    async def shutdown(self) -> None:
         if self._server is not None:
             self._server.should_exit = True
-        if self._thread is not None:
-            self._thread.join(1)
+        if self._serve_task is not None:
+            try:
+                await asyncio.wait_for(self._serve_task, timeout=1)
+            except (asyncio.TimeoutError, asyncio.CancelledError):
+                self._serve_task.cancel()
+                try:
+                    await self._serve_task
+                except asyncio.CancelledError:
+                    pass
