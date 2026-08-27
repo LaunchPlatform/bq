@@ -46,7 +46,9 @@ def db(engine: Engine) -> typing.Generator[Session, None, None]:
 
 
 @pytest.fixture
-async def async_engine(db_url: str, db: Session) -> typing.AsyncGenerator[AsyncEngine, None]:
+async def async_engine(
+    db_url: str, db: Session
+) -> typing.AsyncGenerator[AsyncEngine, None]:
     engine = create_async_engine(db_url)
     try:
         yield engine
@@ -55,7 +57,9 @@ async def async_engine(db_url: str, db: Session) -> typing.AsyncGenerator[AsyncE
 
 
 @pytest.fixture
-async def async_db(async_engine: AsyncEngine) -> typing.AsyncGenerator[AsyncSession, None]:
+async def async_db(
+    async_engine: AsyncEngine,
+) -> typing.AsyncGenerator[AsyncSession, None]:
     maker = async_sessionmaker(async_engine, expire_on_commit=False)
     async with maker() as session:
         yield session

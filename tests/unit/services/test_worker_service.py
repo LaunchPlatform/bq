@@ -48,8 +48,12 @@ async def test_fetch_dead_workers(
     assert frozenset(worker.id for worker in dead_workers) == frozenset(
         [dead_worker0.id, dead_worker1.id]
     )
-    assert db.get(models.Worker, dead_worker0.id).state == models.WorkerState.NO_HEARTBEAT
-    assert db.get(models.Worker, dead_worker1.id).state == models.WorkerState.NO_HEARTBEAT
+    assert (
+        db.get(models.Worker, dead_worker0.id).state == models.WorkerState.NO_HEARTBEAT
+    )
+    assert (
+        db.get(models.Worker, dead_worker1.id).state == models.WorkerState.NO_HEARTBEAT
+    )
     assert alive_worker0.state == models.WorkerState.RUNNING
     assert alive_worker1.state == models.WorkerState.RUNNING
     assert alive_worker2.state == models.WorkerState.RUNNING

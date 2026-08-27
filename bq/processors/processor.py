@@ -153,7 +153,9 @@ class Processor:
                 call_kwargs["savepoint"] = savepoint
             return self.func(**call_kwargs, **kwargs)
 
-    async def _invoke_retry_policy(self, db: typing.Any, task: models.Task) -> typing.Any:
+    async def _invoke_retry_policy(
+        self, db: typing.Any, task: models.Task
+    ) -> typing.Any:
         if inspect.iscoroutinefunction(self.retry_policy):
             return await self.retry_policy(task)
         if isinstance(db, AsyncSession):

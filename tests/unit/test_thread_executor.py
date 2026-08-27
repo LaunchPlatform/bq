@@ -1,4 +1,5 @@
 """Unit tests for async engine configuration and pool management."""
+
 import pytest
 from sqlalchemy.ext.asyncio import AsyncEngine
 from sqlalchemy.ext.asyncio import create_async_engine

@@ -3,8 +3,8 @@ from factory import SubFactory
 from factory.alchemy import SQLAlchemyModelFactory
 from sqlalchemy import func
 
-from bq import models
 from .session import Session
+from bq import models
 
 
 class BaseFactory(SQLAlchemyModelFactory):

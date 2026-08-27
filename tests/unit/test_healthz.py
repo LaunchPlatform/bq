@@ -90,7 +90,9 @@ async def test_check_healthz_async_event_receiver(metrics_server: MetricsServer)
     assert body == {"status": "ok", "worker_id": "worker-1"}
 
 
-async def test_check_healthz_mixed_sync_and_async_receivers(metrics_server: MetricsServer):
+async def test_check_healthz_mixed_sync_and_async_receivers(
+    metrics_server: MetricsServer,
+):
     calls: list[str] = []
 
     @events.healthz_check.connect

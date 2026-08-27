@@ -19,6 +19,7 @@ New behavior (continuous feeding):
 - Dispatch new tasks as soon as capacity is available
 - Keep all threads busy
 """
+
 import asyncio
 import datetime
 import time
@@ -26,7 +27,8 @@ from multiprocessing import Process
 
 from sqlalchemy.orm import Session
 
-from .fixtures.thread_processors import app, slow_task
+from .fixtures.thread_processors import app
+from .fixtures.thread_processors import slow_task
 from bq import models
 from bq.config import Config
 

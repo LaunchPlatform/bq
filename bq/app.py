@@ -381,7 +381,9 @@ class BeanQueue:
         worker_id = worker.id
         max_workers = self.config.resolved_max_concurrent_tasks()
         if max_workers != 1:
-            logger.info("Processing tasks concurrently with max_workers=%s", max_workers)
+            logger.info(
+                "Processing tasks concurrently with max_workers=%s", max_workers
+            )
 
         try:
             if max_workers == 1:

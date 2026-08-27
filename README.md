@@ -55,6 +55,7 @@ from .. import image_utils
 
 app = bq.BeanQueue()
 
+
 @app.processor(channel="images")
 async def resize_image(db: AsyncSession, task: bq.Task, width: int, height: int):
     image = (
@@ -166,6 +167,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 app = bq.BeanQueue()
 delay_retry = bq.DelayRetry(delay=datetime.timedelta(seconds=120))
 
+
 @app.processor(channel="images", retry_policy=delay_retry)
 async def resize_image(db: AsyncSession, task: bq.Task, width: int, height: int):
     # resize image here ...
@@ -186,6 +188,7 @@ To cap how many attempts are allowed, you can also use `LimitAttempt` like this:
 ```python
 delay_retry = bq.DelayRetry(delay=datetime.timedelta(seconds=120))
 capped_delay_retry = bq.LimitAttempt(3, delay_retry)
+
 
 @app.processor(channel="images", retry_policy=capped_delay_retry)
 async def resize_image(db: AsyncSession, task: bq.Task, width: int, height: int):
@@ -372,6 +375,7 @@ class Task(bq.TaskModelMixin, Base):
         "Worker", back_populates="tasks", uselist=False
     )
 
+
 listen_events(Task)
 ```
 
@@ -404,6 +408,7 @@ With the model class ready, you only need to change the `TASK_MODEL`, `WORKER_MO
 
 ```python
 import bq
+
 config = bq.Config(
     TASK_MODEL="my_pkgs.models.Task",
     WORKER_MODEL="my_pkgs.models.Worker",
