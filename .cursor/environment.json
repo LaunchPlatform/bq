@@ -1,0 +1,9 @@
+{
+  "name": "BeanQueue",
+  "user": "ubuntu",
+  "build": {
+    "dockerfile": "Dockerfile"
+  },
+  "install": "bash .cursor/install.sh",
+  "start": "bash .cursor/start.sh"
+}
