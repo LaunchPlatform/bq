@@ -47,5 +47,8 @@ build-backend = "hatchling.build"
 [tool.pytest.ini_options]
 testpaths = ["tests/unit", "tests/acceptance"]
 norecursedirs = [".*", "build", "dist", "e2e"]
+markers = [
+    "e2e: docker compose end-to-end tests against real workers",
+]
 asyncio_mode = "auto"
 asyncio_default_fixture_loop_scope = "function"

@@ -27,8 +27,13 @@ jobs:
     steps:
       - checkout
       - run:
+          name: Install uv
+          command: curl -LsSf https://astral.sh/uv/install.sh | sh
+      - run:
           name: Run Docker Compose end-to-end tests
-          command: ./tests/e2e/run.sh
+          command: |
+            export PATH="$HOME/.local/bin:$PATH"
+            uv run python -m pytest tests/e2e -svvvv
           no_output_timeout: 15m
   build-and-publish:
     docker:

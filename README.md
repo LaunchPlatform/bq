@@ -40,7 +40,7 @@ uv run python -m pytest tests
 End-to-end tests start PostgreSQL and three worker containers with Docker Compose, enqueue real tasks, apply load, kill a worker, and check graceful shutdown cleanup:
 
 ```bash
-./tests/e2e/run.sh
+uv run python -m pytest tests/e2e -svvvv
 ```
 
 ## Upgrading to 2.0

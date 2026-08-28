@@ -8,7 +8,7 @@ RUN apt-get update \
 
 COPY pyproject.toml README.md LICENSE ./
 COPY bq ./bq
-RUN pip install --no-cache-dir -e ".[metrics]" "docker>=7,<8" "httpx>=0.27,<1"
+RUN pip install --no-cache-dir -e ".[metrics]"
 COPY tests/e2e ./tests/e2e
 
 ENV PYTHONPATH=/app

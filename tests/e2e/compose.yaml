@@ -82,26 +82,3 @@ services:
     container_name: bqe2e-worker-c
     ports:
       - "18003:8000"
-
-  tester:
-    <<: *image
-    command: ["python", "-m", "tests.e2e.harness"]
-    environment:
-      <<: *app-env
-      E2E_DATABASE_URL: postgresql+psycopg://bq@host.docker.internal:55432/bq
-      E2E_WORKER_HEALTH_URLS: http://host.docker.internal:18001/healthz,http://host.docker.internal:18002/healthz,http://host.docker.internal:18003/healthz
-      E2E_WORKER_CONTAINERS: worker-a:bqe2e-worker-a,worker-b:bqe2e-worker-b,worker-c:bqe2e-worker-c
-      E2E_BURST: "400"
-      E2E_STRESS_SECONDS: "12"
-    volumes:
-      - /var/run/docker.sock:/var/run/docker.sock
-    depends_on:
-      postgres:
-        condition: service_healthy
-      worker-a:
-        condition: service_healthy
-      worker-b:
-        condition: service_healthy
-      worker-c:
-        condition: service_healthy
-    restart: "no"

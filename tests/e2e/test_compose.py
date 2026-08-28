@@ -1,4 +1,4 @@
-"""Compose-backed BeanQueue end-to-end harness.
+"""Compose-backed BeanQueue end-to-end tests.
 
 Talks to the stack started by tests/e2e/compose.yaml: Postgres, three worker
 containers, real task inserts, stress load, a SIGKILL'd worker, and a graceful
@@ -7,22 +7,29 @@ docker stop so leftover work is cleaned up.
 
 from __future__ import annotations
 
-import logging
 import os
 import subprocess
 import threading
 import time
-import traceback
-import typing
 import uuid
 
 import httpx
-from sqlalchemy import create_engine
-from sqlalchemy import func
-from sqlalchemy import text
+import pytest
 from sqlalchemy.orm import Session
-from sqlalchemy.orm import sessionmaker
 
+from .helpers import BURST
+from .helpers import ComposeStack
+from .helpers import STRESS_SECONDS
+from .helpers import WORKER_CONTAINERS
+from .helpers import busiest_hostname
+from .helpers import clear_queue
+from .helpers import complete_event_count
+from .helpers import counts_by_state
+from .helpers import duplicate_complete_events
+from .helpers import health_urls
+from .helpers import running_workers
+from .helpers import wait_for_finished
+from .helpers import wait_until
 from .processors import async_db_echo
 from .processors import async_ping
 from .processors import async_slow
@@ -32,165 +39,25 @@ from .processors import ping
 from .processors import spawn_child
 from bq import models
 
-logger = logging.getLogger("e2e")
-
-DB_URL = os.environ.get(
-    "E2E_DATABASE_URL", "postgresql+psycopg://bq@host.docker.internal:55432/bq"
-)
-BURST = int(os.environ.get("E2E_BURST", "400"))
-STRESS_SECONDS = float(os.environ.get("E2E_STRESS_SECONDS", "12"))
+pytestmark = pytest.mark.e2e
 
 
-def _health_urls() -> list[str]:
-    raw = os.environ.get(
-        "E2E_WORKER_HEALTH_URLS",
-        "http://host.docker.internal:18001/healthz,http://host.docker.internal:18002/healthz,http://host.docker.internal:18003/healthz",
-    )
-    return [item.strip() for item in raw.split(",") if item.strip()]
-
-
-def _container_map() -> dict[str, str]:
-    raw = os.environ.get(
-        "E2E_WORKER_CONTAINERS",
-        "worker-a:bqe2e-worker-a,worker-b:bqe2e-worker-b,worker-c:bqe2e-worker-c",
-    )
-    mapping: dict[str, str] = {}
-    for part in raw.split(","):
-        host, _, name = part.partition(":")
-        mapping[host.strip()] = name.strip()
-    return mapping
-
-
-def _docker():
-    import docker
-
-    return docker.from_env()
-
-
-def _session_factory() -> sessionmaker:
-    engine = create_engine(DB_URL, pool_pre_ping=True)
-    return sessionmaker(bind=engine, expire_on_commit=False)
-
-
-def wait_until(
-    predicate: typing.Callable[[], bool],
-    timeout: float,
-    message: str | typing.Callable[[], str],
-    interval: float = 0.25,
-):
-    begin = time.monotonic()
-    while True:
-        if predicate():
-            return
-        if time.monotonic() - begin > timeout:
-            text_msg = message() if callable(message) else message
-            raise TimeoutError(text_msg)
-        time.sleep(interval)
-
-
-def counts_by_state(
-    db: Session, task_ids: typing.Sequence[uuid.UUID]
-) -> dict[models.TaskState, int]:
-    rows = (
-        db.query(models.Task.state, func.count())
-        .filter(models.Task.id.in_(task_ids))
-        .group_by(models.Task.state)
-        .all()
-    )
-    return {state: n for state, n in rows}
-
-
-def complete_event_count(db: Session, task_ids: typing.Sequence[uuid.UUID]) -> int:
-    return (
-        db.query(models.Event)
-        .filter(models.Event.task_id.in_(task_ids))
-        .filter(models.Event.type == models.EventType.COMPLETE)
-        .count()
-    )
-
-
-def duplicate_complete_events(
-    db: Session, task_ids: typing.Sequence[uuid.UUID]
-) -> list:
-    return (
-        db.query(models.Event.task_id, func.count())
-        .filter(models.Event.task_id.in_(task_ids))
-        .filter(models.Event.type == models.EventType.COMPLETE)
-        .group_by(models.Event.task_id)
-        .having(func.count() > 1)
-        .all()
-    )
-
-
-def wait_for_finished(
-    db: Session,
-    task_ids: typing.Sequence[uuid.UUID],
-    timeout: float,
-    allow_failed: bool = False,
-):
-    expected = len(task_ids)
-
-    def _done() -> bool:
-        db.expire_all()
-        counts = counts_by_state(db, task_ids)
-        finished = counts.get(models.TaskState.DONE, 0)
-        if allow_failed:
-            finished += counts.get(models.TaskState.FAILED, 0)
-        return finished == expected
-
-    wait_until(
-        _done,
-        timeout=timeout,
-        message=lambda: (
-            f"timeout waiting for {expected} tasks: {counts_by_state(db, task_ids)}"
-        ),
-    )
-
-
-def clear_queue(db: Session):
-    db.query(models.Event).delete()
-    db.query(models.Task).delete()
-    db.commit()
-
-
-def running_workers(db: Session) -> list[models.Worker]:
-    db.expire_all()
-    return (
-        db.query(models.Worker)
-        .filter(models.Worker.state == models.WorkerState.RUNNING)
-        .all()
-    )
-
-
-def wait_for_postgres():
-    factory = _session_factory()
-    begin = time.monotonic()
-    last_error: Exception | None = None
-    while True:
-        db = factory()
-        try:
-            db.execute(text("SELECT 1"))
-            return
-        except Exception as exc:
-            last_error = exc
-            if time.monotonic() - begin > 40:
-                raise TimeoutError(
-                    f"postgres never became ready: {last_error}"
-                ) from exc
-            time.sleep(0.5)
-        finally:
-            db.close()
-
-
-def scenario_health(db: Session):
+def test_health(db: Session, db_url: str):
     wait_until(
         lambda: len(running_workers(db)) >= 3,
         timeout=30,
         message="expected 3 running workers",
     )
-    for url in _health_urls():
+    for url in health_urls():
+
+        def _healthz_ok(u: str = url) -> bool:
+            try:
+                return httpx.get(u, timeout=2).status_code == 200
+            except httpx.HTTPError:
+                return False
+
         wait_until(
-            lambda u=url: httpx.get(u, timeout=2).status_code == 200,
+            _healthz_ok,
             timeout=20,
             message=f"healthz never became ok: {url}",
         )
@@ -206,7 +73,7 @@ def scenario_health(db: Session):
             "-k",
             '{"n": -1}',
         ],
-        env={**os.environ, "BQ_DATABASE_URL": DB_URL},
+        env={**os.environ, "BQ_DATABASE_URL": db_url},
     )
     db.expire_all()
     task = db.query(models.Task).filter(models.Task.kwargs.contains({"n": -1})).one()
@@ -215,7 +82,7 @@ def scenario_health(db: Session):
     assert db.get(models.Task, task.id).result == -1
 
 
-def scenario_burst(db: Session):
+def test_burst(db: Session):
     clear_queue(db)
     ids: list[uuid.UUID] = []
     for i in range(BURST):
@@ -262,10 +129,9 @@ def scenario_burst(db: Session):
         .count()
     )
     assert children == expected_children, (children, expected_children)
-    logger.info("burst finished %s tasks + %s children", len(ids), children)
 
 
-def scenario_stress(db: Session):
+def test_stress(db: Session, compose_stack: ComposeStack):
     clear_queue(db)
     ids: list[uuid.UUID] = []
     lock = threading.Lock()
@@ -273,9 +139,8 @@ def scenario_stress(db: Session):
     expected_failed = {"n": 0}
 
     def _produce():
-        factory = _session_factory()
         n = 0
-        session = factory()
+        session = compose_stack.session_factory()
         try:
             while time.monotonic() < stop_at:
                 for _ in range(8):
@@ -304,7 +169,6 @@ def scenario_stress(db: Session):
         thread.start()
     for thread in threads:
         thread.join()
-    logger.info("stress enqueued %s tasks in %ss", len(ids), STRESS_SECONDS)
     wait_for_finished(db, ids, timeout=90, allow_failed=True)
     db.expire_all()
     counts = counts_by_state(db, ids)
@@ -319,23 +183,9 @@ def scenario_stress(db: Session):
         .filter(models.Task.state == models.TaskState.DONE)
     ]
     assert duplicate_complete_events(db, done_ids) == []
-    logger.info("stress drained %s", counts)
 
 
-def _busiest_hostname(db: Session, task_ids: list[uuid.UUID]) -> str:
-    rows = (
-        db.query(models.Worker.name, func.count())
-        .join(models.Task, models.Task.worker_id == models.Worker.id)
-        .filter(models.Task.id.in_(task_ids))
-        .filter(models.Task.state == models.TaskState.PROCESSING)
-        .group_by(models.Worker.name)
-        .all()
-    )
-    assert rows, "no processing tasks to attribute to a worker"
-    return max(rows, key=lambda row: row[1])[0]
-
-
-def scenario_dead_worker(db: Session):
+def test_dead_worker(db: Session, compose_stack: ComposeStack):
     clear_queue(db)
     ids: list[uuid.UUID] = []
     for i in range(6):
@@ -350,11 +200,10 @@ def scenario_dead_worker(db: Session):
         message=f"slow tasks never started: {counts_by_state(db, ids)}",
     )
     db.expire_all()
-    hostname = _busiest_hostname(db, ids)
-    container = _container_map()[hostname]
+    hostname = busiest_hostname(db, ids)
+    container = WORKER_CONTAINERS[hostname]
     worker_row = db.query(models.Worker).filter(models.Worker.name == hostname).one()
-    logger.info("SIGKILL worker %s (%s)", hostname, container)
-    _docker().containers.get(container).kill()
+    compose_stack.kill(container)
 
     wait_for_finished(db, ids, timeout=45)
     db.expire_all()
@@ -376,10 +225,9 @@ def scenario_dead_worker(db: Session):
     )
     for task in db.query(models.Task).filter(models.Task.id.in_(ids)):
         assert task.worker_id != worker_row.id
-    logger.info("dead worker %s rescheduled and completed", hostname)
 
 
-def scenario_graceful_shutdown(db: Session):
+def test_graceful_shutdown(db: Session, compose_stack: ComposeStack):
     clear_queue(db)
     alive = [worker.name for worker in running_workers(db)]
     assert alive, "no running workers left for graceful shutdown"
@@ -396,13 +244,12 @@ def scenario_graceful_shutdown(db: Session):
         message=f"slow tasks never started: {counts_by_state(db, ids)}",
     )
     db.expire_all()
-    hostname = _busiest_hostname(db, ids)
+    hostname = busiest_hostname(db, ids)
     if hostname not in alive:
         hostname = alive[0]
-    container = _container_map()[hostname]
+    container = WORKER_CONTAINERS[hostname]
     worker_row = db.query(models.Worker).filter(models.Worker.name == hostname).one()
-    logger.info("SIGTERM/stop worker %s (%s)", hostname, container)
-    _docker().containers.get(container).stop(timeout=20)
+    compose_stack.stop(container, timeout=20)
 
     def _is_shutdown() -> bool:
         db.expire_all()
@@ -421,10 +268,9 @@ def scenario_graceful_shutdown(db: Session):
     db.expire_all()
     assert counts_by_state(db, ids).get(models.TaskState.DONE) == len(ids)
     assert counts_by_state(db, ids).get(models.TaskState.PROCESSING, 0) == 0
-    logger.info("graceful shutdown cleaned up in-flight tasks")
 
 
-def scenario_cleanup(db: Session):
+def test_cleanup(db: Session):
     leftover = (
         db.query(models.Task)
         .filter(models.Task.state == models.TaskState.PROCESSING)
@@ -433,43 +279,3 @@ def scenario_cleanup(db: Session):
     assert leftover == 0, f"{leftover} tasks still PROCESSING after e2e"
     running = running_workers(db)
     assert running, "expected at least one worker still running"
-    logger.info("cleanup ok: %s running worker(s), 0 processing tasks", len(running))
-
-
-SCENARIOS: list[tuple[str, typing.Callable[[Session], None]]] = [
-    ("health", scenario_health),
-    ("burst", scenario_burst),
-    ("stress", scenario_stress),
-    ("dead_worker", scenario_dead_worker),
-    ("graceful_shutdown", scenario_graceful_shutdown),
-    ("cleanup", scenario_cleanup),
-]
-
-
-def main():
-    logging.basicConfig(
-        level=logging.INFO,
-        format="%(asctime)s %(levelname)s %(name)s %(message)s",
-    )
-    factory = _session_factory()
-    wait_for_postgres()
-    failed: list[str] = []
-    for name, fn in SCENARIOS:
-        logger.info("=== %s ===", name)
-        db = factory()
-        try:
-            fn(db)
-            logger.info("PASS %s", name)
-        except Exception:
-            logger.exception("FAIL %s", name)
-            traceback.print_exc()
-            failed.append(name)
-        finally:
-            db.close()
-    if failed:
-        raise SystemExit(f"e2e failed: {', '.join(failed)}")
-    logger.info("all e2e scenarios passed")
-
-
-if __name__ == "__main__":
-    main()
