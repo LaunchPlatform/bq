@@ -34,7 +34,9 @@ from bq import models
 
 logger = logging.getLogger("e2e")
 
-DB_URL = os.environ.get("E2E_DATABASE_URL", "postgresql+psycopg://bq:@postgres:5432/bq")
+DB_URL = os.environ.get(
+    "E2E_DATABASE_URL", "postgresql+psycopg://bq@host.docker.internal:55432/bq"
+)
 BURST = int(os.environ.get("E2E_BURST", "400"))
 STRESS_SECONDS = float(os.environ.get("E2E_STRESS_SECONDS", "12"))
 
@@ -42,7 +44,7 @@ STRESS_SECONDS = float(os.environ.get("E2E_STRESS_SECONDS", "12"))
 def _health_urls() -> list[str]:
     raw = os.environ.get(
         "E2E_WORKER_HEALTH_URLS",
-        "http://worker-a:8000/healthz,http://worker-b:8000/healthz,http://worker-c:8000/healthz",
+        "http://host.docker.internal:18001/healthz,http://host.docker.internal:18002/healthz,http://host.docker.internal:18003/healthz",
     )
     return [item.strip() for item in raw.split(",") if item.strip()]
 
