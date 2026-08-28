@@ -22,7 +22,8 @@ cleanup() {
 }
 
 "${COMPOSE[@]}" down -v --remove-orphans >/dev/null 2>&1 || true
-"${COMPOSE[@]}" up --build -d postgres migrate worker-a worker-b worker-c
+"${COMPOSE[@]}" build
+"${COMPOSE[@]}" up -d postgres migrate worker-a worker-b worker-c
 
 echo "Waiting for workers to become healthy..."
 for _ in $(seq 1 60); do
@@ -55,8 +56,8 @@ set -e
 
 if [[ "$code" -ne 0 ]]; then
   echo
-  echo "===== compose logs (failure) ====="
-  "${COMPOSE[@]}" logs --no-color --timestamps || true
+  echo "===== compose logs (failure, last 120 lines per service) ====="
+  "${COMPOSE[@]}" logs --no-color --timestamps --tail=120 || true
 fi
 
 cleanup

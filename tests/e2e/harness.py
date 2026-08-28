@@ -232,9 +232,7 @@ def scenario_burst(db: Session):
         ids.append(task.id)
     db.commit()
     wait_for_finished(db, ids, timeout=60)
-    expected_children = sum(
-        1 for i in range(BURST) if i % 17 == 0 and i % 11 != 0
-    )
+    expected_children = sum(1 for i in range(BURST) if i % 17 == 0 and i % 11 != 0)
 
     def _children_done() -> bool:
         db.expire_all()
@@ -362,13 +360,16 @@ def scenario_dead_worker(db: Session):
     db.expire_all()
     assert counts_by_state(db, ids).get(models.TaskState.DONE) == len(ids)
     assert duplicate_complete_events(db, ids) == []
+
+    def _no_heartbeat() -> bool:
+        db.expire_all()
+        worker = db.get(models.Worker, worker_row.id)
+        return worker is not None and worker.state == models.WorkerState.NO_HEARTBEAT
+
     wait_until(
-        lambda: (
-            db.get(models.Worker, worker_row.id).state
-            == models.WorkerState.NO_HEARTBEAT
-        ),
+        _no_heartbeat,
         timeout=20,
-        message=(
+        message=lambda: (
             "killed worker was not marked NO_HEARTBEAT: "
             f"{db.get(models.Worker, worker_row.id).state}"
         ),
@@ -403,12 +404,15 @@ def scenario_graceful_shutdown(db: Session):
     logger.info("SIGTERM/stop worker %s (%s)", hostname, container)
     _docker().containers.get(container).stop(timeout=20)
 
+    def _is_shutdown() -> bool:
+        db.expire_all()
+        worker = db.get(models.Worker, worker_row.id)
+        return worker is not None and worker.state == models.WorkerState.SHUTDOWN
+
     wait_until(
-        lambda: (
-            db.get(models.Worker, worker_row.id).state == models.WorkerState.SHUTDOWN
-        ),
+        _is_shutdown,
         timeout=25,
-        message=(
+        message=lambda: (
             "stopped worker was not marked SHUTDOWN: "
             f"{db.get(models.Worker, worker_row.id).state}"
         ),
