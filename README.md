@@ -29,6 +29,20 @@ To enable the optional metrics HTTP server (currently `/healthz` only), install 
 pip install "beanqueue[metrics]"
 ```
 
+## Testing
+
+Unit and in-process acceptance tests:
+
+```bash
+uv run python -m pytest tests
+```
+
+End-to-end tests start PostgreSQL and three worker containers with Docker Compose, enqueue real tasks, apply load, kill a worker, and check graceful shutdown cleanup:
+
+```bash
+./tests/e2e/run.sh
+```
+
 ## Upgrading to 2.0
 
 BeanQueue 2.0 is asyncio-first (SQLAlchemy `AsyncSession` + psycopg3) and includes breaking changes:

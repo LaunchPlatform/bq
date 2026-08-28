@@ -21,6 +21,15 @@ jobs:
       - run:
           name: Run test
           command: uv run python -m pytest ./tests -svvvv
+  e2e:
+    machine:
+      image: ubuntu-2204:current
+    steps:
+      - checkout
+      - run:
+          name: Run Docker Compose end-to-end tests
+          command: ./tests/e2e/run.sh
+          no_output_timeout: 15m
   build-and-publish:
     docker:
       - image: cimg/python:3.11.12
@@ -45,9 +54,14 @@ workflows:
             # ref: https://discuss.circleci.com/t/builds-for-tags-not-triggering/17681/7
             tags:
               only: /^.*/
+      - e2e:
+          filters:
+            tags:
+              only: /^.*/
       - build-and-publish:
           requires:
             - test
+            - e2e
           filters:
             branches:
               ignore: /.*/
