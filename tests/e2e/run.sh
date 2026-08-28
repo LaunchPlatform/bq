@@ -24,6 +24,30 @@ cleanup() {
 "${COMPOSE[@]}" down -v --remove-orphans >/dev/null 2>&1 || true
 "${COMPOSE[@]}" up --build -d postgres migrate worker-a worker-b worker-c
 
+echo "Waiting for workers to become healthy..."
+for _ in $(seq 1 60); do
+  statuses=""
+  ready=1
+  for name in bqe2e-worker-a bqe2e-worker-b bqe2e-worker-c; do
+    status="$("${DOCKER[@]}" inspect -f '{{if .State.Health}}{{.State.Health.Status}}{{else}}{{.State.Status}}{{end}}' "$name" 2>/dev/null || echo missing)"
+    statuses="$statuses $name=$status"
+    if [[ "$status" != "healthy" ]]; then
+      ready=0
+    fi
+  done
+  if [[ "$ready" -eq 1 ]]; then
+    echo "Workers healthy:$statuses"
+    break
+  fi
+  sleep 2
+done
+if [[ "$ready" -ne 1 ]]; then
+  echo "Workers did not become healthy:$statuses" >&2
+  "${COMPOSE[@]}" logs --no-color || true
+  cleanup
+  exit 1
+fi
+
 set +e
 "${COMPOSE[@]}" run --rm --no-deps tester
 code=$?
