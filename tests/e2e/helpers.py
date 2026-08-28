@@ -32,10 +32,16 @@ class ComposeStack:
     session_factory: sessionmaker
 
     def kill(self, container: str):
-        subprocess.check_call([*self.docker, "kill", container])
+        subprocess.check_call(
+            [*self.docker, "kill", container],
+            stdout=subprocess.DEVNULL,
+        )
 
     def stop(self, container: str, timeout: int = 20):
-        subprocess.check_call([*self.docker, "stop", "-t", str(timeout), container])
+        subprocess.check_call(
+            [*self.docker, "stop", "-t", str(timeout), container],
+            stdout=subprocess.DEVNULL,
+        )
 
 
 def database_url() -> str:
