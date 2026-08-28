@@ -4,7 +4,6 @@ import typing
 
 import venusian
 from sqlalchemy.ext.asyncio import async_object_session
-from sqlalchemy.orm import object_session
 
 from .. import constants
 from .. import models
@@ -27,10 +26,10 @@ class Registry:
         modules = self.processors.get(task.channel, {})
         functions = modules.get(task.module, {})
         processor: Processor | None = functions.get(task.func_name)
-        db = async_object_session(task)
-        if db is None:
-            db = object_session(task)
         if processor is None:
+            db = async_object_session(task)
+            if db is None:
+                raise RuntimeError("Task is not attached to an AsyncSession")
             self.logger.error(
                 "Cannot find processor for task %s with module=%s, func=%s",
                 task.id,

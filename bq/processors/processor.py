@@ -9,13 +9,19 @@ import typing
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import async_object_session
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy.orm import object_session
 
 from .. import events
 from .. import models
 
 logger = logging.getLogger(__name__)
 current_task = contextvars.ContextVar("current_task")
+
+
+def _require_async_session(task: models.Task) -> AsyncSession:
+    db = async_object_session(task)
+    if db is None:
+        raise RuntimeError("Task is not attached to an AsyncSession")
+    return db
 
 
 @dataclasses.dataclass(frozen=True)
@@ -34,11 +40,7 @@ class Processor:
     async def process(self, task: models.Task, event_cls: typing.Type | None = None):
         ctx_token = current_task.set(task)
         try:
-            db = async_object_session(task)
-            if db is None:
-                db = object_session(task)
-            if db is None:
-                raise RuntimeError("Task is not attached to a database session")
+            db = _require_async_session(task)
             func_signature = inspect.signature(self.func)
             base_kwargs: dict[str, typing.Any] = {}
             if "task" in func_signature.parameters:
@@ -46,8 +48,7 @@ class Processor:
             try:
                 result = await self._invoke(db, task, func_signature, base_kwargs)
             except Exception as exc:
-                if isinstance(db, AsyncSession):
-                    await db.refresh(task)
+                await db.refresh(task)
                 logger.error("Unhandled exception for task %s", task.id, exc_info=True)
                 events.task_failure.send(self, task=task, exception=exc)
                 task.state = models.TaskState.FAILED
@@ -64,8 +65,8 @@ class Processor:
                         if isinstance(retry_scheduled_at, datetime.datetime):
                             retry_scheduled_at_value = retry_scheduled_at
                         else:
-                            retry_scheduled_at_value = await _session_scalar(
-                                db, retry_scheduled_at
+                            retry_scheduled_at_value = await db.scalar(
+                                select(retry_scheduled_at)
                             )
                         logger.info(
                             "Schedule task %s for retry at %s",
@@ -101,7 +102,7 @@ class Processor:
 
     async def _invoke(
         self,
-        db: typing.Any,
+        db: AsyncSession,
         task: models.Task,
         func_signature: inspect.Signature,
         base_kwargs: dict[str, typing.Any],
@@ -121,52 +122,29 @@ class Processor:
                 return await self.func(**call_kwargs, **kwargs)
 
         if wants_db:
-            if isinstance(db, AsyncSession):
 
-                def _sync_call(sync_db: typing.Any) -> typing.Any:
-                    call_kwargs = dict(base_kwargs)
-                    call_kwargs["db"] = sync_db
-                    with sync_db.begin_nested() as savepoint:
-                        if wants_savepoint:
-                            call_kwargs["savepoint"] = savepoint
-                        return self.func(**call_kwargs, **kwargs)
-
-                return await db.run_sync(_sync_call)
-
-            with db.begin_nested() as savepoint:
+            def _sync_call(sync_db: typing.Any) -> typing.Any:
                 call_kwargs = dict(base_kwargs)
-                call_kwargs["db"] = db
-                if wants_savepoint:
-                    call_kwargs["savepoint"] = savepoint
-                return self.func(**call_kwargs, **kwargs)
+                call_kwargs["db"] = sync_db
+                with sync_db.begin_nested() as savepoint:
+                    if wants_savepoint:
+                        call_kwargs["savepoint"] = savepoint
+                    return self.func(**call_kwargs, **kwargs)
 
-        if isinstance(db, AsyncSession):
-            async with db.begin_nested() as savepoint:
-                call_kwargs = dict(base_kwargs)
-                if wants_savepoint:
-                    call_kwargs["savepoint"] = savepoint
-                return await asyncio.to_thread(self.func, **call_kwargs, **kwargs)
+            return await db.run_sync(_sync_call)
 
-        with db.begin_nested() as savepoint:
+        async with db.begin_nested() as savepoint:
             call_kwargs = dict(base_kwargs)
             if wants_savepoint:
                 call_kwargs["savepoint"] = savepoint
-            return self.func(**call_kwargs, **kwargs)
+            return await asyncio.to_thread(self.func, **call_kwargs, **kwargs)
 
     async def _invoke_retry_policy(
-        self, db: typing.Any, task: models.Task
+        self, db: AsyncSession, task: models.Task
     ) -> typing.Any:
         if inspect.iscoroutinefunction(self.retry_policy):
             return await self.retry_policy(task)
-        if isinstance(db, AsyncSession):
-            return await db.run_sync(lambda _: self.retry_policy(task))
-        return self.retry_policy(task)
-
-
-async def _session_scalar(db: typing.Any, expression: typing.Any) -> typing.Any:
-    if isinstance(db, AsyncSession):
-        return await db.scalar(select(expression))
-    return db.scalar(select(expression))
+        return await db.run_sync(lambda _: self.retry_policy(task))
 
 
 class ProcessorHelper:

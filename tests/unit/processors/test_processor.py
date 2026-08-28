@@ -153,6 +153,14 @@ async def test_process_async_processor(
     assert task.result == "async-result"
 
 
+async def test_process_requires_async_session(db: Session, task: models.Task):
+    processor = Processor(
+        channel="mock-channel", module="mock.module", name="my_func", func=lambda: None
+    )
+    with pytest.raises(RuntimeError, match="AsyncSession"):
+        await processor.process(task=task)
+
+
 def test_processor_helper(processor_module: str):
     from ..fixtures.processors import processor0
 

@@ -1,5 +1,6 @@
 import pytest
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import Session
 
 from .. import fixtures
 from .conftest import processor_module
@@ -51,3 +52,10 @@ async def test_registry_process(
 ):
     task = await async_db.get(models.Task, task.id)
     assert await registry.process(task) == expected
+
+
+async def test_registry_process_missing_processor_requires_async_session(
+    db: Session, registry: Registry, task: models.Task
+):
+    with pytest.raises(RuntimeError, match="AsyncSession"):
+        await registry.process(task)
