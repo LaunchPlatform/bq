@@ -4,6 +4,7 @@ import asyncio
 import importlib
 import logging
 import platform
+import signal
 import sys
 import typing
 from importlib.metadata import PackageNotFoundError
@@ -46,7 +47,57 @@ class BeanQueue:
         self.dispatch_service_cls = dispatch_service_cls
         self._engine = engine
         self._worker_update_shutdown_event: asyncio.Event = asyncio.Event()
+        self._stop_event: asyncio.Event = asyncio.Event()
         self._metrics_server: MetricsServer | None = None
+        self._stop_signals: list[signal.Signals] = []
+        self._active_dispatch: DispatchService | None = None
+
+    def _request_stop(self):
+        logger.info("Stop signal received, shutting down worker")
+        self._stop_event.set()
+        dispatch = self._active_dispatch
+        if dispatch is None:
+            return
+        try:
+            asyncio.get_running_loop().create_task(dispatch.aclose())
+        except RuntimeError:
+            pass
+
+    def _install_stop_signals(self):
+        loop = asyncio.get_running_loop()
+        self._stop_signals = []
+        for sig in (signal.SIGINT, signal.SIGTERM):
+            try:
+                loop.add_signal_handler(sig, self._request_stop)
+            except (NotImplementedError, RuntimeError):
+                continue
+            self._stop_signals.append(sig)
+
+    def _clear_stop_signals(self):
+        loop = asyncio.get_running_loop()
+        for sig in self._stop_signals:
+            try:
+                loop.remove_signal_handler(sig)
+            except (NotImplementedError, RuntimeError):
+                pass
+        self._stop_signals = []
+
+    async def _drain_running_tasks(
+        self, running: set[asyncio.Task], timeout: float = 10
+    ):
+        if not running:
+            return
+        logger.info("Waiting for %s in-flight tasks to finish", len(running))
+        done, pending = await asyncio.wait(running, timeout=timeout)
+        for task in pending:
+            task.cancel()
+        if pending:
+            await asyncio.wait(pending, timeout=2)
+        for task in done | pending:
+            try:
+                task.result()
+            except (asyncio.CancelledError, Exception):
+                pass
 
     def create_default_engine(self) -> AsyncEngine:
         max_workers = self.config.resolved_max_concurrent_tasks()
@@ -220,8 +271,8 @@ class BeanQueue:
         worker_id: typing.Any,
     ):
         """Process tasks sequentially (MAX_CONCURRENT_TASKS=1)."""
-        while True:
-            while True:
+        while not self._stop_event.is_set():
+            while not self._stop_event.is_set():
                 tasks = await dispatch_service.dispatch(
                     channels,
                     worker_id=worker_id,
@@ -253,6 +304,11 @@ class BeanQueue:
             except TimeoutError:
                 logger.debug("Poll timeout, try again")
                 continue
+            except Exception:
+                if self._stop_event.is_set():
+                    break
+                raise
+        logger.info("Stop requested, leaving sequential processing loop")
 
     async def _process_tasks_concurrent(
         self,
@@ -276,6 +332,11 @@ class BeanQueue:
                 logger.error("Task processing failed: %s", e)
 
         while True:
+            if self._stop_event.is_set():
+                await self._drain_running_tasks(running)
+                logger.info("Stop requested, leaving concurrent processing loop")
+                return
+
             capacity = max_workers - len(running)
             if capacity > 0:
                 tasks = await dispatch_service.dispatch(
@@ -318,6 +379,12 @@ class BeanQueue:
             except TimeoutError:
                 logger.debug("Poll timeout, try again")
                 continue
+            except Exception:
+                if self._stop_event.is_set():
+                    await self._drain_running_tasks(running)
+                    logger.info("Stop requested, leaving concurrent processing loop")
+                    return
+                raise
 
     async def process_tasks(
         self,
@@ -372,6 +439,9 @@ class BeanQueue:
         events.worker_init.send(self, worker=worker)
 
         logger.info("Processing tasks in channels = %s ...", channels)
+        self._active_dispatch = dispatch_service
+        self._stop_event = asyncio.Event()
+        self._install_stop_signals()
         self._worker_update_shutdown_event = asyncio.Event()
         heartbeat_task = asyncio.create_task(
             self.update_workers(worker_id=worker.id),
@@ -410,6 +480,8 @@ class BeanQueue:
                 logger.debug("Rollback during shutdown failed", exc_info=True)
             logger.info("Shutting down ...")
         finally:
+            self._clear_stop_signals()
+            self._active_dispatch = None
             self._worker_update_shutdown_event.set()
             heartbeat_task.cancel()
             try:
