@@ -1,6 +1,6 @@
 # BeanQueue [![CircleCI](https://dl.circleci.com/status-badge/img/gh/LaunchPlatform/bq/tree/master.svg?style=svg)](https://dl.circleci.com/status-badge/redirect/gh/LaunchPlatform/bq/tree/master)
 
-BeanQueue, a lightweight Python task queue framework based on [SQLAlchemy](https://www.sqlalchemy.org/), PostgreSQL [SKIP LOCKED queries](https://www.2ndquadrant.com/en/blog/what-is-select-skip-locked-for-in-postgresql-9-5/) and [NOTIFY](https://www.postgresql.org/docs/current/sql-notify.html) / [LISTEN](https://www.postgresql.org/docs/current/sql-listen.html) statements.
+BeanQueue, a lightweight Python task queue framework based on [SQLAlchemy](https://www.sqlalchemy.org/) 2.0 asyncio, [psycopg3](https://www.psycopg.org/psycopg3/), PostgreSQL [SKIP LOCKED queries](https://www.2ndquadrant.com/en/blog/what-is-select-skip-locked-for-in-postgresql-9-5/) and [NOTIFY](https://www.postgresql.org/docs/current/sql-notify.html) / [LISTEN](https://www.postgresql.org/docs/current/sql-listen.html) statements.
 
 **Notice**: Still in its early stage, we built this for [BeanHub](https://beanhub.io)'s internal usage. May change rapidly. Use at your own risk for now.
 
@@ -29,20 +29,39 @@ To enable the optional metrics HTTP server (currently `/healthz` only), install 
 pip install "beanqueue[metrics]"
 ```
 
+## Testing
+
+Unit and in-process acceptance tests:
+
+```bash
+uv run python -m pytest tests
+```
+
+End-to-end tests start PostgreSQL and three worker containers with Docker Compose, enqueue real tasks, apply load, kill a worker, and check graceful shutdown cleanup:
+
+```bash
+uv run python -m pytest tests/e2e -svvvv
+```
+
 ## Upgrading to 2.0
 
-BeanQueue 2.0 includes breaking changes around the metrics HTTP server and custom health checks:
+BeanQueue 2.0 is asyncio-first (SQLAlchemy `AsyncSession` + psycopg3) and includes breaking changes:
 
+- **Workers use asyncio SQLAlchemy.** `BeanQueue.make_session()` returns an `AsyncSession`, `engine` is an `AsyncEngine`, and `process_tasks()` is `async`. Run it with `asyncio.run(app.process_tasks(...))` or `await` it from your own loop.
+- **Database URLs use the psycopg3 driver.** Prefer `postgresql+psycopg://...`. Bare `postgresql://...` URLs are normalized to `postgresql+psycopg://...`.
+- **`MAX_WORKER_THREADS` is now `MAX_CONCURRENT_TASKS`.** `BQ_MAX_WORKER_THREADS` and the old keyword still work as a deprecated alias.
+- **Processors may be `async def` or `def`.** Async processors receive `db: AsyncSession`. Sync processors that take `db` still receive a sync `Session` via `AsyncSession.run_sync()`.
 - **`METRICS_HTTP_SERVER_ENABLED` defaults to `False`** (it was `True` in 1.x). Set `BQ_METRICS_HTTP_SERVER_ENABLED=true` to turn the server back on.
 - **The metrics server requires optional dependencies.** Install `beanqueue[metrics]` (`starlette` and `uvicorn`). Without them, enabling the server raises an error at startup.
-- **Custom health checks use the `healthz_check` event** (`bq.events.healthz_check`) instead of a `healthz_check` argument on `bq.BeanQueue`. Connect sync or async receivers to the signal.
+- **Custom health checks use the `healthz_check` event** (`bq.events.healthz_check`) instead of a `healthz_check` argument on `bq.BeanQueue`. Receivers that query the database should use `AsyncSession` (`await session.execute(...)`).
 
 ## Usage
 
 You can define a basic task processor like this
 
 ```python
-from sqlalchemy.orm import Session
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
 
 import bq
 from .. import models
@@ -50,14 +69,19 @@ from .. import image_utils
 
 app = bq.BeanQueue()
 
+
 @app.processor(channel="images")
-def resize_image(db: Session, task: bq.Task, width: int, height: int):
-    image = db.query(models.Image).filter(models.Image.task == task).one()
+async def resize_image(db: AsyncSession, task: bq.Task, width: int, height: int):
+    image = (
+        await db.execute(select(models.Image).where(models.Image.task == task))
+    ).scalar_one()
     image_utils.resize(image, size=(width, height))
     db.add(image)
     # by default the `processor` decorator has `auto_complete` flag turns on,
     # so it will commit the db changes for us automatically
 ```
+
+Synchronous processors are still supported. If the function takes a `db` argument, BeanQueue injects the sync `Session` behind the `AsyncSession`. Processors that do not use the database can stay as plain `def` functions and are run in a worker thread so they do not block the event loop.
 
 The `db` and `task` keyword arguments are optional.
 If you don't need to access the task object, you can simply define the function without these two parameters.
@@ -152,13 +176,14 @@ To automatically retry a task after failure, you can specify a retry policy to t
 ```python
 import datetime
 import bq
-from sqlalchemy.orm import Session
+from sqlalchemy.ext.asyncio import AsyncSession
 
 app = bq.BeanQueue()
 delay_retry = bq.DelayRetry(delay=datetime.timedelta(seconds=120))
 
+
 @app.processor(channel="images", retry_policy=delay_retry)
-def resize_image(db: Session, task: bq.Task, width: int, height: int):
+async def resize_image(db: AsyncSession, task: bq.Task, width: int, height: int):
     # resize image here ...
     pass
 ```
@@ -178,8 +203,9 @@ To cap how many attempts are allowed, you can also use `LimitAttempt` like this:
 delay_retry = bq.DelayRetry(delay=datetime.timedelta(seconds=120))
 capped_delay_retry = bq.LimitAttempt(3, delay_retry)
 
+
 @app.processor(channel="images", retry_policy=capped_delay_retry)
-def resize_image(db: Session, task: bq.Task, width: int, height: int):
+async def resize_image(db: AsyncSession, task: bq.Task, width: int, height: int):
     # Resize image here ...
     pass
 ```
@@ -192,7 +218,7 @@ You can also retry only for specific exception classes with the `retry_exception
     retry_policy=delay_retry,
     retry_exceptions=ValueError,
 )
-def resize_image(db: Session, task: bq.Task, width: int, height: int):
+async def resize_image(db: AsyncSession, task: bq.Task, width: int, height: int):
     # resize image here ...
     pass
 ```
@@ -228,7 +254,9 @@ bq -a my_pkgs.bq.app process images
 Or if you prefer to define your own process command, you can also call `process_tasks` of the `BeanQueue` object directly like this:
 
 ```python
-app.process_tasks(channels=("images",))
+import asyncio
+
+asyncio.run(app.process_tasks(channels=("images",)))
 ```
 
 ### Health check and metrics HTTP server
@@ -294,7 +322,7 @@ Receivers may be synchronous or asynchronous; both can be mixed on the same sign
 
 ```python
 from sqlalchemy import text
-from sqlalchemy.orm import Session
+from sqlalchemy.ext.asyncio import AsyncSession
 
 import bq
 from bq import events
@@ -303,12 +331,12 @@ app = bq.BeanQueue()
 
 
 @events.healthz_check.connect
-def check_database(sender: bq.BeanQueue, worker, session: Session):
-    session.execute(text("SELECT 1"))
+async def check_database(sender: bq.BeanQueue, worker, session: AsyncSession):
+    await session.execute(text("SELECT 1"))
 
 
 @events.healthz_check.connect
-async def check_external_service(sender: bq.BeanQueue, worker, session: Session):
+async def check_external_service(sender: bq.BeanQueue, worker, session: AsyncSession):
     # async HTTP call, etc.
     ...
 ```
@@ -361,6 +389,7 @@ class Task(bq.TaskModelMixin, Base):
         "Worker", back_populates="tasks", uselist=False
     )
 
+
 listen_events(Task)
 ```
 
@@ -393,6 +422,7 @@ With the model class ready, you only need to change the `TASK_MODEL`, `WORKER_MO
 
 ```python
 import bq
+
 config = bq.Config(
     TASK_MODEL="my_pkgs.models.Task",
     WORKER_MODEL="my_pkgs.models.Worker",

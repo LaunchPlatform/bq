@@ -1,29 +1,26 @@
-import functools
+from __future__ import annotations
+
+import asyncio
 import importlib
 import logging
 import platform
+import signal
 import sys
-import threading
 import typing
-from concurrent.futures import FIRST_COMPLETED
-from concurrent.futures import ThreadPoolExecutor
-from concurrent.futures import wait as futures_wait
 from importlib.metadata import PackageNotFoundError
 from importlib.metadata import version
 
 import venusian
 from sqlalchemy import func
-from sqlalchemy.engine import create_engine
-from sqlalchemy.engine import Engine
-from sqlalchemy.orm import Session as DBSession
-from sqlalchemy.pool import QueuePool
-from sqlalchemy.pool import SingletonThreadPool
+from sqlalchemy.ext.asyncio import AsyncEngine
+from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.ext.asyncio import create_async_engine
 
 from . import constants
 from . import events
 from . import models
 from .config import Config
-from .db.session import SessionMaker
+from .db.session import AsyncSessionMaker
 from .metrics import MetricsServer
 from .processors.processor import Processor
 from .processors.processor import ProcessorHelper
@@ -39,49 +36,83 @@ class BeanQueue:
     def __init__(
         self,
         config: Config | None = None,
-        session_cls: DBSession = SessionMaker,
+        session_cls: typing.Any = AsyncSessionMaker,
         worker_service_cls: typing.Type[WorkerService] = WorkerService,
         dispatch_service_cls: typing.Type[DispatchService] = DispatchService,
-        engine: Engine | None = None,
+        engine: AsyncEngine | None = None,
     ):
         self.config = config if config is not None else Config()
         self.session_cls = session_cls
         self.worker_service_cls = worker_service_cls
         self.dispatch_service_cls = dispatch_service_cls
         self._engine = engine
-        self._worker_update_shutdown_event: threading.Event = threading.Event()
+        self._worker_update_shutdown_event: asyncio.Event = asyncio.Event()
+        self._stop_event: asyncio.Event = asyncio.Event()
         self._metrics_server: MetricsServer | None = None
+        self._stop_signals: list[signal.Signals] = []
+        self._active_dispatch: DispatchService | None = None
 
-    def create_default_engine(self):
-        # Use thread-safe connection pool when thread pool executor is enabled
-        if self.config.MAX_WORKER_THREADS != 1:
-            # QueuePool is thread-safe and suitable for multi-threaded usage
-            # Configure pool size based on number of worker threads
-            max_workers = (
-                self.config.MAX_WORKER_THREADS
-                if self.config.MAX_WORKER_THREADS > 0
-                else 10
-            )
-            pool_size = (
-                max_workers + 5
-            )  # Extra connections for main thread and worker update thread
-            return create_engine(
-                str(self.config.DATABASE_URL),
-                poolclass=QueuePool,
-                pool_size=pool_size,
-                max_overflow=10,
-            )
-        else:
-            # SingletonThreadPool for single-threaded sequential processing
-            return create_engine(
-                str(self.config.DATABASE_URL), poolclass=SingletonThreadPool
-            )
+    def _request_stop(self):
+        logger.info("Stop signal received, shutting down worker")
+        self._stop_event.set()
+        dispatch = self._active_dispatch
+        if dispatch is None:
+            return
+        try:
+            asyncio.get_running_loop().create_task(dispatch.aclose())
+        except RuntimeError:
+            pass
 
-    def make_session(self) -> DBSession:
+    def _install_stop_signals(self):
+        loop = asyncio.get_running_loop()
+        self._stop_signals = []
+        for sig in (signal.SIGINT, signal.SIGTERM):
+            try:
+                loop.add_signal_handler(sig, self._request_stop)
+            except (NotImplementedError, RuntimeError):
+                continue
+            self._stop_signals.append(sig)
+
+    def _clear_stop_signals(self):
+        loop = asyncio.get_running_loop()
+        for sig in self._stop_signals:
+            try:
+                loop.remove_signal_handler(sig)
+            except (NotImplementedError, RuntimeError):
+                pass
+        self._stop_signals = []
+
+    async def _drain_running_tasks(
+        self, running: set[asyncio.Task], timeout: float = 10
+    ):
+        if not running:
+            return
+        logger.info("Waiting for %s in-flight tasks to finish", len(running))
+        done, pending = await asyncio.wait(running, timeout=timeout)
+        for task in pending:
+            task.cancel()
+        if pending:
+            await asyncio.wait(pending, timeout=2)
+        for task in done | pending:
+            try:
+                task.result()
+            except (asyncio.CancelledError, Exception):
+                pass
+
+    def create_default_engine(self) -> AsyncEngine:
+        max_workers = self.config.resolved_max_concurrent_tasks()
+        pool_size = max_workers + 5
+        return create_async_engine(
+            str(self.config.DATABASE_URL),
+            pool_size=pool_size,
+            max_overflow=10,
+        )
+
+    def make_session(self) -> AsyncSession:
         return self.session_cls(bind=self.engine)
 
     @property
-    def engine(self) -> Engine:
+    def engine(self) -> AsyncEngine:
         if self._engine is None:
             self._engine = self.create_default_engine()
         return self._engine
@@ -100,12 +131,12 @@ class BeanQueue:
             return
         return load_module_var(self.config.EVENT_MODEL)
 
-    def _make_worker_service(self, session: DBSession):
+    def _make_worker_service(self, session: AsyncSession) -> WorkerService:
         return self.worker_service_cls(
             session=session, task_model=self.task_model, worker_model=self.worker_model
         )
 
-    def _make_dispatch_service(self, session: DBSession):
+    def _make_dispatch_service(self, session: AsyncSession) -> DispatchService:
         return self.dispatch_service_cls(session=session, task_model=self.task_model)
 
     def processor(
@@ -143,80 +174,78 @@ class BeanQueue:
 
         return decorator
 
-    def update_workers(
+    async def update_workers(
         self,
         worker_id: typing.Any,
     ):
         db = self.make_session()
+        try:
+            worker_service = self._make_worker_service(db)
+            dispatch_service = self._make_dispatch_service(db)
 
-        worker_service = self._make_worker_service(db)
-        dispatch_service = self._make_dispatch_service(db)
-
-        current_worker = worker_service.get_worker(worker_id)
-        logger.info(
-            "Updating worker %s with heartbeat_period=%s, heartbeat_timeout=%s",
-            current_worker.id,
-            self.config.WORKER_HEARTBEAT_PERIOD,
-            self.config.WORKER_HEARTBEAT_TIMEOUT,
-        )
-        while True:
-            dead_workers = worker_service.fetch_dead_workers(
-                timeout=self.config.WORKER_HEARTBEAT_TIMEOUT
+            current_worker = await worker_service.get_worker(worker_id)
+            logger.info(
+                "Updating worker %s with heartbeat_period=%s, heartbeat_timeout=%s",
+                current_worker.id,
+                self.config.WORKER_HEARTBEAT_PERIOD,
+                self.config.WORKER_HEARTBEAT_TIMEOUT,
             )
-            task_count = worker_service.reschedule_dead_tasks(
-                # TODO: a better way to abstract this?
-                dead_workers.with_entities(current_worker.__class__.id)
-            )
-            found_dead_worker = False
-            for dead_worker in dead_workers:
-                found_dead_worker = True
-                logger.info(
-                    "Found dead worker %s (name=%s), reschedule %s dead tasks in channels %s",
-                    dead_worker.id,
-                    dead_worker.name,
-                    task_count,
-                    dead_worker.channels,
+            while True:
+                dead_workers = await worker_service.fetch_dead_workers(
+                    timeout=self.config.WORKER_HEARTBEAT_TIMEOUT
                 )
-                dispatch_service.notify(dead_worker.channels)
-            if found_dead_worker:
-                db.commit()
-
-            if current_worker.state != models.WorkerState.RUNNING:
-                # This probably means we are somehow very slow to update the heartbeat in time, or the timeout window
-                # is set too short. It could also be the administrator update the worker state to something else than
-                # RUNNING. Regardless the reason, let's stop processing.
-                logger.warning(
-                    "Current worker %s state is %s instead of running, quit processing",
-                    current_worker.id,
-                    current_worker.state,
+                task_count = await worker_service.reschedule_dead_tasks(
+                    [dead_worker.id for dead_worker in dead_workers]
                 )
-                sys.exit(0)
+                found_dead_worker = False
+                for dead_worker in dead_workers:
+                    found_dead_worker = True
+                    logger.info(
+                        "Found dead worker %s (name=%s), reschedule %s dead tasks in channels %s",
+                        dead_worker.id,
+                        dead_worker.name,
+                        task_count,
+                        dead_worker.channels,
+                    )
+                    await dispatch_service.notify(dead_worker.channels)
+                if found_dead_worker:
+                    await db.commit()
 
-            do_shutdown = self._worker_update_shutdown_event.wait(
-                self.config.WORKER_HEARTBEAT_PERIOD
-            )
-            if do_shutdown:
-                return
+                await db.refresh(current_worker)
+                if current_worker.state != models.WorkerState.RUNNING:
+                    # This probably means we are somehow very slow to update the heartbeat in time, or the timeout window
+                    # is set too short. It could also be the administrator update the worker state to something else than
+                    # RUNNING. Regardless the reason, let's stop processing.
+                    logger.warning(
+                        "Current worker %s state is %s instead of running, quit processing",
+                        current_worker.id,
+                        current_worker.state,
+                    )
+                    sys.exit(0)
 
-            current_worker.last_heartbeat = func.now()
-            db.add(current_worker)
-            db.commit()
+                try:
+                    await asyncio.wait_for(
+                        self._worker_update_shutdown_event.wait(),
+                        timeout=self.config.WORKER_HEARTBEAT_PERIOD,
+                    )
+                    return
+                except asyncio.TimeoutError:
+                    pass
 
-    def _process_task_in_thread(
-        self,
-        task_id: typing.Any,
-        registry: typing.Any,
-    ):
-        """Process a single task in a thread-safe manner with its own database session.
+                current_worker.last_heartbeat = func.now()
+                db.add(current_worker)
+                await db.commit()
+        finally:
+            await db.close()
 
-        This method is called from worker threads in the thread pool. It creates its own
-        database session to avoid SQLAlchemy session conflicts between threads.
-        """
+    async def _process_task(self, task_id: typing.Any, registry: typing.Any):
+        """Process a single task with its own database session."""
         db = self.make_session()
         try:
-            # Reload the task in this thread's session to avoid SQLAlchemy context issues
-            task = db.query(self.task_model).filter(self.task_model.id == task_id).one()
-
+            task = await db.get(self.task_model, task_id)
+            if task is None:
+                logger.error("Task %s not found", task_id)
+                return
             logger.info(
                 "Processing task %s, channel=%s, module=%s, func=%s",
                 task.id,
@@ -224,31 +253,31 @@ class BeanQueue:
                 task.module,
                 task.func_name,
             )
-            registry.process(task, event_cls=self.event_model)
-            db.commit()
+            await registry.process(task, event_cls=self.event_model)
+            await db.commit()
         except Exception as e:
             logger.exception("Error processing task %s: %s", task_id, e)
-            db.rollback()
+            await db.rollback()
             raise
         finally:
-            db.close()
+            await db.close()
 
-    def _process_tasks_sequential(
+    async def _process_tasks_sequential(
         self,
-        db: DBSession,
+        db: AsyncSession,
         dispatch_service: DispatchService,
         registry: typing.Any,
         channels: tuple[str, ...],
         worker_id: typing.Any,
     ):
-        """Process tasks sequentially (original behavior for MAX_WORKER_THREADS=1)."""
-        while True:
-            while True:
-                tasks = dispatch_service.dispatch(
+        """Process tasks sequentially (MAX_CONCURRENT_TASKS=1)."""
+        while not self._stop_event.is_set():
+            while not self._stop_event.is_set():
+                tasks = await dispatch_service.dispatch(
                     channels,
                     worker_id=worker_id,
                     limit=self.config.BATCH_SIZE,
-                ).all()
+                )
 
                 for task in tasks:
                     logger.info(
@@ -258,110 +287,106 @@ class BeanQueue:
                         task.module,
                         task.func_name,
                     )
-                    registry.process(task, event_cls=self.event_model)
+                    await registry.process(task, event_cls=self.event_model)
                 if tasks:
-                    db.commit()
+                    await db.commit()
 
                 if not tasks:
                     break
 
-            db.close()
+            await db.rollback()
             try:
-                for notification in dispatch_service.poll(
+                notifications = await dispatch_service.poll(
                     timeout=self.config.POLL_TIMEOUT
-                ):
+                )
+                for notification in notifications:
                     logger.debug("Receive notification %s", notification)
             except TimeoutError:
                 logger.debug("Poll timeout, try again")
                 continue
+            except Exception:
+                if self._stop_event.is_set():
+                    break
+                raise
+        logger.info("Stop requested, leaving sequential processing loop")
 
-    def _process_tasks_threaded(
+    async def _process_tasks_concurrent(
         self,
-        db: DBSession,
-        executor: ThreadPoolExecutor,
+        db: AsyncSession,
         dispatch_service: DispatchService,
         registry: typing.Any,
         channels: tuple[str, ...],
         worker_id: typing.Any,
+        max_workers: int,
     ):
-        """Process tasks using thread pool with continuous task feeding.
+        """Process tasks concurrently with a semaphore, feeding new work as capacity frees."""
+        running: set[asyncio.Task] = set()
 
-        This implementation continuously checks for completed futures and fetches new tasks
-        when there's capacity in the thread pool. It uses concurrent.futures.wait() to
-        properly detect ANY completed future, not just the first one submitted.
-        """
-        max_workers = self.config.MAX_WORKER_THREADS
-        if max_workers == 0:
-            max_workers = 10  # Default when set to auto
-
-        running_futures: set = set()
+        def _on_done(task: asyncio.Task):
+            running.discard(task)
+            try:
+                task.result()
+            except asyncio.CancelledError:
+                pass
+            except Exception as e:
+                logger.error("Task processing failed: %s", e)
 
         while True:
-            # Clean up ANY completed futures using wait() with zero timeout
-            if running_futures:
-                done, running_futures = futures_wait(
-                    running_futures, timeout=0, return_when=FIRST_COMPLETED
-                )
-                for f in done:
-                    try:
-                        f.result()
-                    except Exception as e:
-                        logger.error("Task processing failed: %s", e)
+            if self._stop_event.is_set():
+                await self._drain_running_tasks(running)
+                logger.info("Stop requested, leaving concurrent processing loop")
+                return
 
-            # If we have capacity, fetch and submit more tasks
-            capacity = max_workers - len(running_futures)
+            capacity = max_workers - len(running)
             if capacity > 0:
-                tasks = dispatch_service.dispatch(
+                tasks = await dispatch_service.dispatch(
                     channels,
                     worker_id=worker_id,
                     limit=min(capacity, self.config.BATCH_SIZE),
-                ).all()
-
-                # Always commit to close the transaction and refresh the snapshot,
-                # so subsequent dispatch calls can see newly committed tasks
-                db.commit()
+                )
+                await db.commit()
 
                 if tasks:
                     logger.debug(
                         "Dispatching %d tasks (running=%d, capacity=%d)",
                         len(tasks),
-                        len(running_futures),
+                        len(running),
                         capacity,
                     )
-
                     for task in tasks:
-                        future = executor.submit(
-                            self._process_task_in_thread,
-                            task.id,
-                            registry,
+                        fut = asyncio.create_task(
+                            self._process_task(task.id, registry),
+                            name=f"task-{task.id}",
                         )
-                        running_futures.add(future)
+                        running.add(fut)
+                        fut.add_done_callback(_on_done)
 
-            # If we have running tasks, wait briefly for any to complete then check for new tasks
-            if running_futures:
-                # Short wait - allows checking for new tasks frequently
-                done, running_futures = futures_wait(
-                    running_futures, timeout=0.05, return_when=FIRST_COMPLETED
+            if running:
+                await asyncio.wait(
+                    running,
+                    timeout=0.05,
+                    return_when=asyncio.FIRST_COMPLETED,
                 )
-                for f in done:
-                    try:
-                        f.result()
-                    except Exception as e:
-                        logger.error("Task processing failed: %s", e)
                 continue
 
-            # No running tasks and no new tasks found - poll for notifications
-            db.close()
+            await db.rollback()
             try:
-                for notification in dispatch_service.poll(
+                notifications = await dispatch_service.poll(
                     timeout=self.config.POLL_TIMEOUT
-                ):
+                )
+                for notification in notifications:
                     logger.debug("Receive notification %s", notification)
             except TimeoutError:
                 logger.debug("Poll timeout, try again")
                 continue
+            except Exception:
+                if self._stop_event.is_set():
+                    await self._drain_running_tasks(running)
+                    logger.info("Stop requested, leaving concurrent processing loop")
+                    return
+                raise
 
-    def process_tasks(
+    async def process_tasks(
         self,
         channels: tuple[str, ...],
     ):
@@ -374,9 +399,8 @@ class BeanQueue:
             "Starting processing tasks, bq_version=%s",
             bq_version,
         )
-        db = self.make_session()
         if not channels:
-            channels = [constants.DEFAULT_CHANNEL]
+            channels = (constants.DEFAULT_CHANNEL,)
 
         if not self.config.PROCESSOR_PACKAGES:
             logger.error("No PROCESSOR_PACKAGES provided")
@@ -393,6 +417,7 @@ class BeanQueue:
                         "  Processor module=%r, name=%r", module, processor.name
                     )
 
+        db = self.make_session()
         dispatch_service = self.dispatch_service_cls(
             session=db, task_model=self.task_model
         )
@@ -402,83 +427,82 @@ class BeanQueue:
 
         worker = work_service.make_worker(name=platform.node(), channels=channels)
         db.add(worker)
-        dispatch_service.listen(channels)
-        db.commit()
+        await db.commit()
+        await db.refresh(worker)
+        await dispatch_service.listen(channels)
 
         if self.config.METRICS_HTTP_SERVER_ENABLED:
             self._metrics_server = MetricsServer(self, worker.id)
-            self._metrics_server.start()
+            await self._metrics_server.start()
 
         logger.info("Created worker %s, name=%s", worker.id, worker.name)
         events.worker_init.send(self, worker=worker)
 
         logger.info("Processing tasks in channels = %s ...", channels)
-        # Graceful shutdown of worker update event on exit of the worker
-        worker_update_thread = threading.Thread(
-            target=functools.partial(
-                self.update_workers,
-                worker_id=worker.id,
-            ),
+        self._active_dispatch = dispatch_service
+        self._stop_event = asyncio.Event()
+        self._install_stop_signals()
+        self._worker_update_shutdown_event = asyncio.Event()
+        heartbeat_task = asyncio.create_task(
+            self.update_workers(worker_id=worker.id),
             name="update_workers",
         )
-        worker_update_thread.daemon = True
-        worker_update_thread.start()
 
         worker_id = worker.id
-
-        # Determine the number of worker threads
-        max_workers = self.config.MAX_WORKER_THREADS
-        if max_workers == 0:
-            max_workers = None  # Default to (num_cpus * 5)
-
-        # Create thread pool executor for concurrent task processing
-        executor = None
+        max_workers = self.config.resolved_max_concurrent_tasks()
         if max_workers != 1:
-            executor = ThreadPoolExecutor(
-                max_workers=max_workers, thread_name_prefix="task_worker"
+            logger.info(
+                "Processing tasks concurrently with max_workers=%s", max_workers
             )
-            logger.info("Created thread pool executor with max_workers=%s", max_workers)
 
         try:
-            if executor is not None:
-                # Threaded processing with continuous task feeding
-                self._process_tasks_threaded(
+            if max_workers == 1:
+                await self._process_tasks_sequential(
                     db=db,
-                    executor=executor,
                     dispatch_service=dispatch_service,
                     registry=registry,
                     channels=channels,
                     worker_id=worker_id,
                 )
             else:
-                # Sequential processing (original behavior)
-                self._process_tasks_sequential(
+                await self._process_tasks_concurrent(
                     db=db,
                     dispatch_service=dispatch_service,
                     registry=registry,
                     channels=channels,
                     worker_id=worker_id,
+                    max_workers=max_workers,
                 )
-        except (SystemExit, KeyboardInterrupt):
-            db.rollback()
+        except (SystemExit, KeyboardInterrupt, asyncio.CancelledError):
+            try:
+                await db.rollback()
+            except Exception:
+                logger.debug("Rollback during shutdown failed", exc_info=True)
             logger.info("Shutting down ...")
-
-            # Shutdown the executor if it was created
-            if executor is not None:
-                logger.info("Shutting down thread pool executor...")
-                executor.shutdown(wait=True, cancel_futures=False)
-                logger.info("Thread pool executor shutdown complete")
-
+        finally:
+            self._clear_stop_signals()
+            self._active_dispatch = None
             self._worker_update_shutdown_event.set()
-            worker_update_thread.join(5)
+            heartbeat_task.cancel()
+            try:
+                await heartbeat_task
+            except (asyncio.CancelledError, SystemExit):
+                pass
             if self._metrics_server is not None:
-                self._metrics_server.shutdown()
+                await self._metrics_server.shutdown()
+            await dispatch_service.aclose()
+            await db.close()
 
-        worker.state = models.WorkerState.SHUTDOWN
-        db.add(worker)
-        task_count = work_service.reschedule_dead_tasks([worker.id])
-        logger.info("Reschedule %s tasks", task_count)
-        dispatch_service.notify(channels)
-        db.commit()
+        async with self.make_session() as shutdown_db:
+            shutdown_work = self._make_worker_service(shutdown_db)
+            shutdown_dispatch = self._make_dispatch_service(shutdown_db)
+            worker_row = await shutdown_work.get_worker(worker_id)
+            if worker_row is not None:
+                worker_row.state = models.WorkerState.SHUTDOWN
+                shutdown_db.add(worker_row)
+            task_count = await shutdown_work.reschedule_dead_tasks([worker_id])
+            logger.info("Reschedule %s tasks", task_count)
+            await shutdown_dispatch.notify(channels)
+            await shutdown_db.commit()
 
         logger.info("Shutdown gracefully")

@@ -1,4 +1,4 @@
-import asyncio
+from unittest.mock import AsyncMock
 from unittest.mock import MagicMock
 
 import pytest
@@ -23,8 +23,10 @@ def app_with_worker(
 ) -> BeanQueue:
     app = BeanQueue()
     db = MagicMock()
+    db.__aenter__ = AsyncMock(return_value=db)
+    db.__aexit__ = AsyncMock(return_value=False)
     worker_service = MagicMock()
-    worker_service.get_worker.return_value = running_worker
+    worker_service.get_worker = AsyncMock(return_value=running_worker)
     monkeypatch.setattr(app, "make_session", lambda: db)
     monkeypatch.setattr(app, "_make_worker_service", lambda _session: worker_service)
     return app
@@ -35,20 +37,20 @@ def metrics_server(app_with_worker: BeanQueue) -> MetricsServer:
     return MetricsServer(app_with_worker, "worker-1")
 
 
-def test_check_healthz_ok(metrics_server: MetricsServer):
-    ok, body = asyncio.run(metrics_server.check_healthz())
+async def test_check_healthz_ok(metrics_server: MetricsServer):
+    ok, body = await metrics_server.check_healthz()
 
     assert ok is True
     assert body["status"] == "ok"
 
 
-def test_check_healthz_event_receiver_raises(metrics_server: MetricsServer):
+async def test_check_healthz_event_receiver_raises(metrics_server: MetricsServer):
     @events.healthz_check.connect
     def _check(sender, worker, session):
         raise ValueError("external service down")
 
     try:
-        ok, body = asyncio.run(metrics_server.check_healthz())
+        ok, body = await metrics_server.check_healthz()
     finally:
         events.healthz_check.disconnect(_check)
 
@@ -60,13 +62,13 @@ def test_check_healthz_event_receiver_raises(metrics_server: MetricsServer):
     }
 
 
-def test_check_healthz_event_receiver_success(metrics_server: MetricsServer):
+async def test_check_healthz_event_receiver_success(metrics_server: MetricsServer):
     @events.healthz_check.connect
     def _check(sender, worker, session):
         return None
 
     try:
-        ok, body = asyncio.run(metrics_server.check_healthz())
+        ok, body = await metrics_server.check_healthz()
     finally:
         events.healthz_check.disconnect(_check)
 
@@ -74,13 +76,13 @@ def test_check_healthz_event_receiver_success(metrics_server: MetricsServer):
     assert body == {"status": "ok", "worker_id": "worker-1"}
 
 
-def test_check_healthz_async_event_receiver(metrics_server: MetricsServer):
+async def test_check_healthz_async_event_receiver(metrics_server: MetricsServer):
     @events.healthz_check.connect
     async def _check(sender, worker, session):
-        await asyncio.sleep(0)
+        return None
 
     try:
-        ok, body = asyncio.run(metrics_server.check_healthz())
+        ok, body = await metrics_server.check_healthz()
     finally:
         events.healthz_check.disconnect(_check)
 
@@ -88,7 +90,9 @@ def test_check_healthz_async_event_receiver(metrics_server: MetricsServer):
     assert body == {"status": "ok", "worker_id": "worker-1"}
 
 
-def test_check_healthz_mixed_sync_and_async_receivers(metrics_server: MetricsServer):
+async def test_check_healthz_mixed_sync_and_async_receivers(
+    metrics_server: MetricsServer,
+):
     calls: list[str] = []
 
     @events.healthz_check.connect
@@ -100,7 +104,7 @@ def test_check_healthz_mixed_sync_and_async_receivers(metrics_server: MetricsSer
         calls.append("async")
 
     try:
-        ok, body = asyncio.run(metrics_server.check_healthz())
+        ok, body = await metrics_server.check_healthz()
     finally:
         events.healthz_check.disconnect(_sync_check)
         events.healthz_check.disconnect(_async_check)

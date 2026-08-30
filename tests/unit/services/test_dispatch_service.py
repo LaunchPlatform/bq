@@ -2,6 +2,7 @@ import datetime
 
 import pytest
 from sqlalchemy import func
+from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import Session
 
 from ...factories import TaskFactory
@@ -10,37 +11,43 @@ from bq.services.dispatch import DispatchService
 
 
 @pytest.fixture
-def dispatch_service(db: Session) -> DispatchService:
-    return DispatchService(db)
+async def dispatch_service(async_db: AsyncSession) -> DispatchService:
+    service = DispatchService(async_db)
+    try:
+        yield service
+    finally:
+        await service.aclose()
 
 
-def test_dispatch_empty(
-    db: Session, dispatch_service: DispatchService, worker: models.Worker
+async def test_dispatch_empty(
+    async_db: AsyncSession, dispatch_service: DispatchService, worker: models.Worker
 ):
-    assert not list(dispatch_service.dispatch(["test"], worker_id=worker.id))
+    assert not await dispatch_service.dispatch(["test"], worker_id=worker.id)
 
 
-def test_dispatch(
+async def test_dispatch(
     db: Session,
+    async_db: AsyncSession,
     dispatch_service: DispatchService,
     worker: models.Worker,
     task: models.Task,
 ):
     assert task.state == models.TaskState.PENDING
-    tasks = list(dispatch_service.dispatch([task.channel], worker_id=worker.id))
+    tasks = await dispatch_service.dispatch([task.channel], worker_id=worker.id)
+    await async_db.commit()
     db.expire_all()
     assert len(tasks) == 1
     returned_task = tasks[0]
     assert returned_task.state == models.TaskState.PROCESSING
-    assert returned_task.worker == worker
-    assert not list(dispatch_service.dispatch([task.channel], worker_id=worker.id))
+    assert returned_task.worker_id == worker.id
+    assert not await dispatch_service.dispatch([task.channel], worker_id=worker.id)
 
 
 @pytest.mark.parametrize(
     "task__scheduled_at", [func.now() + datetime.timedelta(seconds=10)]
 )
-def test_dispatch_with_scheduled_at(
-    db: Session,
+async def test_dispatch_with_scheduled_at(
+    async_db: AsyncSession,
     dispatch_service: DispatchService,
     worker: models.Worker,
     task: models.Task,
@@ -48,26 +55,25 @@ def test_dispatch_with_scheduled_at(
     assert task.state == models.TaskState.PENDING
     assert task.scheduled_at is not None
 
-    tasks = list(dispatch_service.dispatch([task.channel], worker_id=worker.id))
-    db.expire_all()
+    tasks = await dispatch_service.dispatch([task.channel], worker_id=worker.id)
+    await async_db.commit()
     assert len(tasks) == 0
 
-    tasks = list(
-        dispatch_service.dispatch(
-            [task.channel],
-            worker_id=worker.id,
-            now=func.now() + datetime.timedelta(seconds=10),
-        )
+    tasks = await dispatch_service.dispatch(
+        [task.channel],
+        worker_id=worker.id,
+        now=func.now() + datetime.timedelta(seconds=10),
     )
-    db.expire_all()
+    await async_db.commit()
     assert len(tasks) == 1
     returned_task = tasks[0]
     assert returned_task.state == models.TaskState.PROCESSING
-    assert returned_task.worker == worker
+    assert returned_task.worker_id == worker.id
 
 
-def test_dispatch_many(
+async def test_dispatch_many(
     db: Session,
+    async_db: AsyncSession,
     dispatch_service: DispatchService,
     worker: models.Worker,
     task_factory: TaskFactory,
@@ -81,12 +87,13 @@ def test_dispatch_many(
 
     task_factory(channel=channel, state=models.TaskState.DONE)
 
-    tasks = list(dispatch_service.dispatch([channel], worker_id=worker.id, limit=3))
+    tasks = await dispatch_service.dispatch([channel], worker_id=worker.id, limit=3)
+    await async_db.commit()
     db.expire_all()
     assert len(tasks) == 3
     for task in tasks:
         assert task.state == models.TaskState.PROCESSING
-        assert task.worker == worker
+        assert task.worker_id == worker.id
 
     for task in db.query(models.Task).filter(models.Task.channel != channel):
         assert task.state == models.TaskState.PENDING
@@ -100,21 +107,23 @@ def test_dispatch_many(
     assert len(remain_ids) == 1
     assert remain_ids[0] not in [task.id for task in tasks]
 
-    tasks = list(dispatch_service.dispatch(["my_channel"], worker_id=worker.id))
+    tasks = await dispatch_service.dispatch(["my_channel"], worker_id=worker.id)
     assert len(tasks) == 1
 
 
-def test_listen_value_quote(db: Session, dispatch_service: DispatchService):
-    dispatch_service.listen(["a", "中文", "!@#$%^&*(()-_"])
-    db.commit()
+async def test_listen_value_quote(
+    async_db: AsyncSession, dispatch_service: DispatchService
+):
+    await dispatch_service.listen(["a", "中文", "!@#$%^&*(()-_"])
+    await async_db.commit()
 
 
-def test_poll(db: Session, dispatch_service: DispatchService):
-    dispatch_service.listen(["a", "b", "c"])
-    db.commit()
+async def test_poll(async_db: AsyncSession, dispatch_service: DispatchService):
+    await dispatch_service.listen(["a", "b", "c"])
+    await async_db.commit()
     with pytest.raises(TimeoutError):
-        list(dispatch_service.poll(timeout=1))
-    dispatch_service.notify(["a", "c"])
-    db.commit()
-    notifications = list(dispatch_service.poll(timeout=1))
+        await dispatch_service.poll(timeout=1)
+    await dispatch_service.notify(["a", "c"])
+    await async_db.commit()
+    notifications = await dispatch_service.poll(timeout=1)
     assert frozenset([n.channel for n in notifications]) == frozenset(["a", "c"])

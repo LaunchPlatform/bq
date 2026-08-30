@@ -3,7 +3,7 @@ import logging
 import typing
 
 import venusian
-from sqlalchemy.orm import object_session
+from sqlalchemy.ext.asyncio import async_object_session
 
 from .. import constants
 from .. import models
@@ -18,16 +18,18 @@ class Registry:
     def add(self, processor: Processor):
         self.processors[processor.channel][processor.module][processor.name] = processor
 
-    def process(
+    async def process(
         self,
         task: models.Task,
         event_cls: typing.Type | None = None,
     ) -> typing.Any:
         modules = self.processors.get(task.channel, {})
         functions = modules.get(task.module, {})
-        processor: Processor = functions.get(task.func_name)
-        db = object_session(task)
+        processor: Processor | None = functions.get(task.func_name)
         if processor is None:
+            db = async_object_session(task)
+            if db is None:
+                raise RuntimeError("Task is not attached to an AsyncSession")
             self.logger.error(
                 "Cannot find processor for task %s with module=%s, func=%s",
                 task.id,
@@ -45,7 +47,7 @@ class Registry:
                 db.add(event)
             db.add(task)
             return
-        return processor.process(task, event_cls=event_cls)
+        return await processor.process(task, event_cls=event_cls)
 
 
 def collect(packages: list[typing.Any], registry: Registry | None = None) -> Registry:

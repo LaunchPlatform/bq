@@ -1,3 +1,4 @@
+import asyncio
 import datetime
 import threading
 import time
@@ -7,23 +8,22 @@ from sqlalchemy import create_engine
 from sqlalchemy.orm import Session
 
 from .fixtures.thread_processors import app
-from .fixtures.thread_processors import slow_task
 from .fixtures.thread_processors import concurrent_task
+from .fixtures.thread_processors import slow_task
 from .fixtures.thread_processors import timed_task
 from bq import models
 from bq.config import Config
-from bq.db.session import Session as BqSession
 
 
 def run_process_cmd_with_threads(db_url: str, max_workers: int, batch_size: int):
-    """Run worker process with thread pool executor enabled."""
+    """Run worker process with concurrent task processing enabled."""
     app.config = Config(
         PROCESSOR_PACKAGES=["tests.acceptance.fixtures.thread_processors"],
         DATABASE_URL=db_url,
-        MAX_WORKER_THREADS=max_workers,
+        MAX_CONCURRENT_TASKS=max_workers,
         BATCH_SIZE=batch_size,
     )
-    app.process_tasks(channels=("thread-tests",))
+    asyncio.run(app.process_tasks(channels=("thread-tests",)))
 
 
 def test_thread_executor_with_multiple_threads(db: Session, db_url: str):
@@ -125,7 +125,9 @@ def test_thread_executor_session_isolation(db: Session, db_url: str):
         .filter(models.Task.state == models.TaskState.FAILED)
         .count()
     )
-    assert failed_tasks == 0, f"Found {failed_tasks} failed tasks due to session conflicts"
+    assert failed_tasks == 0, (
+        f"Found {failed_tasks} failed tasks due to session conflicts"
+    )
     assert done_tasks == task_count, f"Only {done_tasks}/{task_count} tasks completed"
 
     proc.kill()
@@ -345,13 +347,15 @@ def test_tasks_from_separate_connections_run_concurrently(db: Session, db_url: s
     task_ids = []
     task_ids_lock = threading.Lock()
 
-    def create_task_in_separate_connection(task_num: int, sleep_time: float, delay: float):
+    def create_task_in_separate_connection(
+        task_num: int, sleep_time: float, delay: float
+    ):
         """Create a task using a completely separate database connection."""
         time.sleep(delay)  # Stagger task creation
 
         # Create a new engine and session - simulates a separate web request
         engine = create_engine(db_url)
-        session = BqSession(bind=engine)
+        session = Session(bind=engine)
         try:
             task = timed_task.run(task_num=task_num, sleep_time=sleep_time)
             session.add(task)
@@ -400,7 +404,9 @@ def test_tasks_from_separate_connections_run_concurrently(db: Session, db_url: s
         if delta.total_seconds() > 15:
             states = {
                 t.id: t.state
-                for t in db.query(models.Task).filter(models.Task.id.in_(current_ids)).all()
+                for t in db.query(models.Task)
+                .filter(models.Task.id.in_(current_ids))
+                .all()
             }
             raise TimeoutError(f"Timeout waiting for tasks. States: {states}")
         time.sleep(0.1)
@@ -468,12 +474,14 @@ def test_staggered_task_arrival_proves_concurrency(db: Session, db_url: str):
     task_ids = []
     task_ids_lock = threading.Lock()
 
-    def create_task_in_separate_connection(task_num: int, sleep_time: float, delay: float):
+    def create_task_in_separate_connection(
+        task_num: int, sleep_time: float, delay: float
+    ):
         """Create a task using a completely separate database connection."""
         time.sleep(delay)
 
         engine = create_engine(db_url)
-        session = BqSession(bind=engine)
+        session = Session(bind=engine)
         try:
             task = timed_task.run(task_num=task_num, sleep_time=sleep_time)
             session.add(task)
@@ -533,7 +541,9 @@ def test_staggered_task_arrival_proves_concurrency(db: Session, db_url: str):
         if delta.total_seconds() > 25:
             states = {
                 t.id: t.state
-                for t in db.query(models.Task).filter(models.Task.id.in_(current_ids)).all()
+                for t in db.query(models.Task)
+                .filter(models.Task.id.in_(current_ids))
+                .all()
             }
             raise TimeoutError(
                 f"Timeout waiting for tasks. States: {states}, "
@@ -567,8 +577,12 @@ def test_staggered_task_arrival_proves_concurrency(db: Session, db_url: str):
     task_time_span = max(t1_end, t2_end) - min(t1_start, t2_start)
 
     print(f"\n=== Concurrency Test Results ===")
-    print(f"Task1: start={t1_start:.3f}, end={t1_end:.3f}, duration={t1_end-t1_start:.2f}s")
-    print(f"Task2: start={t2_start:.3f}, end={t2_end:.3f}, duration={t2_end-t2_start:.2f}s")
+    print(
+        f"Task1: start={t1_start:.3f}, end={t1_end:.3f}, duration={t1_end - t1_start:.2f}s"
+    )
+    print(
+        f"Task2: start={t2_start:.3f}, end={t2_end:.3f}, duration={t2_end - t2_start:.2f}s"
+    )
     print(f"Overlap: {overlap_duration:.2f}s")
     print(f"Task time span: {task_time_span:.2f}s")
     print(f"Total wall time: {total_wall_time:.2f}s")

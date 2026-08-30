@@ -1,6 +1,6 @@
-import time
 import datetime
 import threading
+import time
 
 import bq
 from bq.processors.retry_policies import DelayRetry
@@ -29,7 +29,7 @@ def concurrent_task(task: bq.Task, value: int):
     """A task to test concurrent execution and session isolation."""
     # Simulate some work
     time.sleep(0.1)
-    result = value ** 2
+    result = value**2
     return result
 
 

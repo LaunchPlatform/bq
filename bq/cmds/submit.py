@@ -1,3 +1,4 @@
+import asyncio
 import json
 
 import click
@@ -22,8 +23,16 @@ def submit(
     func: str,
     kwargs: str | None,
 ):
-    db = env.app.make_session()
+    asyncio.run(_submit(env, channel, module, func, kwargs))
 
+
+async def _submit(
+    env: Environment,
+    channel: str,
+    module: str,
+    func: str,
+    kwargs: str | None,
+):
     env.logger.info(
         "Submit task with channel=%s, module=%s, func=%s", channel, module, func
     )
@@ -31,12 +40,13 @@ def submit(
     if kwargs:
         kwargs_value = json.loads(kwargs)
 
-    task = env.app.task_model(
-        channel=channel,
-        module=module,
-        func_name=func,
-        kwargs=kwargs_value,
-    )
-    db.add(task)
-    db.commit()
-    env.logger.info("Done, submit task %s", task.id)
+    async with env.app.make_session() as db:
+        task = env.app.task_model(
+            channel=channel,
+            module=module,
+            func_name=func,
+            kwargs=kwargs_value,
+        )
+        db.add(task)
+        await db.commit()
+        env.logger.info("Done, submit task %s", task.id)

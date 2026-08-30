@@ -4,33 +4,36 @@ Realistic integration tests that mirror actual production usage patterns.
 These tests are designed to catch issues that might pass in isolated unit tests
 but fail in real integrations (like the tape app).
 """
+
+import asyncio
 import datetime
-import threading
 import time
 from multiprocessing import Process
 
-from sqlalchemy import create_engine, select, func
 from sqlalchemy.orm import Session
 
 from .fixtures.thread_processors import app
-from .fixtures.thread_processors import slow_task, record_thread_name
+from .fixtures.thread_processors import record_thread_name
+from .fixtures.thread_processors import slow_task
 from bq import models
 from bq.config import Config
 
 
-def run_single_worker_with_config(db_url: str, max_workers: int, batch_size: int, duration: int = 30):
+def run_single_worker_with_config(
+    db_url: str, max_workers: int, batch_size: int, duration: int = 30
+):
     """
-    Run a single worker process with specific thread configuration.
-    This mirrors how production apps run: one worker process with threading enabled.
+    Run a single worker process with specific concurrency configuration.
+    This mirrors how production apps run: one worker process with concurrent tasks.
     """
     app.config = Config(
         PROCESSOR_PACKAGES=["tests.acceptance.fixtures.thread_processors"],
         DATABASE_URL=db_url,
-        MAX_WORKER_THREADS=max_workers,
+        MAX_CONCURRENT_TASKS=max_workers,
         BATCH_SIZE=batch_size,
         POLL_TIMEOUT=duration,  # Will exit after this timeout if no tasks
     )
-    app.process_tasks(channels=("thread-tests",))
+    asyncio.run(app.process_tasks(channels=("thread-tests",)))
 
 
 def test_default_config_is_serial(db: Session, db_url: str):
@@ -81,7 +84,9 @@ def test_default_config_is_serial(db: Session, db_url: str):
 
     # With serial execution, should take at least 4 seconds (4 tasks * 1 second each)
     # Allow some overhead, but it should clearly be serial
-    assert elapsed >= 3.5, f"Expected serial execution to take >=3.5s, but took {elapsed:.2f}s (suspiciously fast)"
+    assert elapsed >= 3.5, (
+        f"Expected serial execution to take >=3.5s, but took {elapsed:.2f}s (suspiciously fast)"
+    )
 
     # Should definitely take less than 10 seconds (sanity check)
     assert elapsed < 10, f"Serial execution took {elapsed:.2f}s, which is too slow"
@@ -137,10 +142,14 @@ def test_explicit_threading_is_concurrent(db: Session, db_url: str):
     assert done_tasks == task_count
 
     # With 4 threads running 4 tasks concurrently, should take ~1-2 seconds max
-    assert elapsed < 3, f"Expected concurrent execution to take <3s, but took {elapsed:.2f}s (suspiciously slow - no concurrency?)"
+    assert elapsed < 3, (
+        f"Expected concurrent execution to take <3s, but took {elapsed:.2f}s (suspiciously slow - no concurrency?)"
+    )
 
     # Should definitely take at least 0.8 seconds (tasks are 1 second each)
-    assert elapsed >= 0.8, f"Concurrent execution took {elapsed:.2f}s, which is too fast"
+    assert elapsed >= 0.8, (
+        f"Concurrent execution took {elapsed:.2f}s, which is too fast"
+    )
 
     proc.kill()
     proc.join(3)
@@ -212,28 +221,27 @@ def test_realistic_tape_scenario(db: Session, db_url: str):
 
     # With concurrency: should take ~2-4 seconds
     # Without concurrency: would take 12 * 0.5 = 6 seconds
-    assert elapsed < 5, f"Expected concurrent execution to take <5s, but took {elapsed:.2f}s (no concurrency?)"
+    assert elapsed < 5, (
+        f"Expected concurrent execution to take <5s, but took {elapsed:.2f}s (no concurrency?)"
+    )
     assert elapsed >= 1.5, f"Execution took {elapsed:.2f}s, which is suspiciously fast"
 
     proc.kill()
     proc.join(3)
 
-    print(f"✓ Realistic tape scenario: {total_tasks} tasks with dynamic arrival took {elapsed:.2f}s")
+    print(
+        f"✓ Realistic tape scenario: {total_tasks} tasks with dynamic arrival took {elapsed:.2f}s"
+    )
 
 
-def test_thread_names_and_logging(db: Session, db_url: str):
-    """
-    Test that thread names are properly set and can be used for debugging.
-    This helps verify that tasks are actually running in different threads.
-    """
-    # Start worker with 3 threads
+def test_sync_processors_run_in_worker_threads(db: Session, db_url: str):
+    """Sync processors that do not take db run via asyncio.to_thread."""
     proc = Process(
         target=run_single_worker_with_config,
         args=(db_url, 3, 10, 15),
     )
     proc.start()
 
-    # Create 6 tasks
     task_count = 6
     task_ids = []
     for i in range(task_count):
@@ -243,7 +251,6 @@ def test_thread_names_and_logging(db: Session, db_url: str):
         task_ids.append(task.id)
     db.commit()
 
-    # Wait for completion
     begin = datetime.datetime.now()
     while True:
         db.expire_all()
@@ -259,7 +266,6 @@ def test_thread_names_and_logging(db: Session, db_url: str):
             raise TimeoutError(f"Timeout waiting for tasks")
         time.sleep(0.5)
 
-    # Verify we got different thread names
     completed_tasks = (
         db.query(models.Task)
         .filter(models.Task.id.in_(task_ids))
@@ -268,19 +274,13 @@ def test_thread_names_and_logging(db: Session, db_url: str):
     )
 
     thread_names = [task.result for task in completed_tasks]
-    unique_threads = set(thread_names)
-
-    # With 3 threads and 6 tasks, we should see multiple thread names
-    assert len(unique_threads) >= 2, f"Expected at least 2 different threads, but only saw: {unique_threads}"
-
-    # Thread names should contain "task_worker" prefix
+    assert len(thread_names) == task_count
     for name in thread_names:
-        assert "task_worker" in name, f"Unexpected thread name: {name}"
+        assert isinstance(name, str) and name
+        assert name != "MainThread"
 
     proc.kill()
     proc.join(3)
-
-    print(f"✓ Thread names verified: {len(unique_threads)} unique threads used: {unique_threads}")
 
 
 def test_compare_serial_vs_concurrent(db: Session, db_url: str):
@@ -365,16 +365,17 @@ def test_compare_serial_vs_concurrent(db: Session, db_url: str):
     # Compare results
     speedup = serial_elapsed / concurrent_elapsed
 
-    print(f"\n{'='*60}")
+    print(f"\n{'=' * 60}")
     print(f"SERIAL (MAX_WORKER_THREADS=1):     {serial_elapsed:.2f}s")
     print(f"CONCURRENT (MAX_WORKER_THREADS=4): {concurrent_elapsed:.2f}s")
     print(f"SPEEDUP:                           {speedup:.2f}x")
-    print(f"{'='*60}")
+    print(f"{'=' * 60}")
 
     # Serial should take significantly longer
     # Expected: 8 tasks * 0.5s = 4s (serial) vs 2 batches * 0.5s = 1s (4 threads)
-    assert serial_elapsed > concurrent_elapsed * 1.5, \
+    assert serial_elapsed > concurrent_elapsed * 1.5, (
         f"Serial ({serial_elapsed:.2f}s) should be significantly slower than concurrent ({concurrent_elapsed:.2f}s)"
+    )
 
     # Concurrent should show at least 1.5x speedup (conservative, should be closer to 3-4x)
     assert speedup >= 1.5, f"Expected speedup of at least 1.5x, but got {speedup:.2f}x"

@@ -1,5 +1,6 @@
-from sqlalchemy.orm import scoped_session
-from sqlalchemy.orm import sessionmaker
+from sqlalchemy.ext.asyncio import async_sessionmaker
+from sqlalchemy.ext.asyncio import AsyncSession
 
-SessionMaker = sessionmaker()
-Session = scoped_session(SessionMaker)
+AsyncSessionMaker = async_sessionmaker(expire_on_commit=False)
+
+__all__ = ["AsyncSession", "AsyncSessionMaker"]

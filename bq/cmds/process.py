@@ -1,3 +1,5 @@
+import asyncio
+
 import click
 
 from .cli import cli
@@ -12,4 +14,4 @@ def process(
     env: Environment,
     channels: tuple[str, ...],
 ):
-    env.app.process_tasks(channels)
+    asyncio.run(env.app.process_tasks(channels))

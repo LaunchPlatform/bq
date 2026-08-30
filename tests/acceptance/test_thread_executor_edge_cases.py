@@ -1,4 +1,6 @@
-"""Additional acceptance tests for thread executor edge cases and robustness."""
+"""Additional acceptance tests for concurrent worker edge cases and robustness."""
+
+import asyncio
 import datetime
 import time
 from multiprocessing import Process
@@ -18,15 +20,15 @@ def run_process_cmd_with_threads(
     batch_size: int,
     poll_timeout: int = 60,
 ):
-    """Run worker process with thread pool executor enabled."""
+    """Run worker process with concurrent task processing enabled."""
     app.config = Config(
         PROCESSOR_PACKAGES=["tests.acceptance.fixtures.thread_processors"],
         DATABASE_URL=db_url,
-        MAX_WORKER_THREADS=max_workers,
+        MAX_CONCURRENT_TASKS=max_workers,
         BATCH_SIZE=batch_size,
         POLL_TIMEOUT=poll_timeout,
     )
-    app.process_tasks(channels=("thread-tests",))
+    asyncio.run(app.process_tasks(channels=("thread-tests",)))
 
 
 def test_thread_executor_with_failing_tasks(db: Session, db_url: str):
@@ -41,7 +43,7 @@ def test_thread_executor_with_failing_tasks(db: Session, db_url: str):
     task_count = 12
     for i in range(task_count):
         # Every 3rd task will fail
-        will_fail = (i % 3 == 0)
+        will_fail = i % 3 == 0
         task = failing_task.run(task_num=i, should_fail=will_fail)
         db.add(task)
     db.commit()
@@ -76,14 +78,16 @@ def test_thread_executor_with_failing_tasks(db: Session, db_url: str):
         time.sleep(0.5)
 
     # Verify correct number of successful and failed tasks
-    assert done_tasks == expected_done, f"Expected {expected_done} done tasks, got {done_tasks}"
-    assert failed_tasks == expected_failed, f"Expected {expected_failed} failed tasks, got {failed_tasks}"
+    assert done_tasks == expected_done, (
+        f"Expected {expected_done} done tasks, got {done_tasks}"
+    )
+    assert failed_tasks == expected_failed, (
+        f"Expected {expected_failed} failed tasks, got {failed_tasks}"
+    )
 
     # Verify failed tasks have error messages
     failed_task_records = (
-        db.query(models.Task)
-        .filter(models.Task.state == models.TaskState.FAILED)
-        .all()
+        db.query(models.Task).filter(models.Task.state == models.TaskState.FAILED).all()
     )
     for task in failed_task_records:
         assert task.error_message is not None
@@ -171,9 +175,7 @@ def test_thread_executor_more_tasks_than_threads(db: Session, db_url: str):
 
     # Verify all results are correct
     completed_tasks = (
-        db.query(models.Task)
-        .filter(models.Task.state == models.TaskState.DONE)
-        .all()
+        db.query(models.Task).filter(models.Task.state == models.TaskState.DONE).all()
     )
     for task in completed_tasks:
         expected_result = task.kwargs["task_num"] * 2
@@ -214,12 +216,16 @@ def test_thread_executor_with_retry_policy(db: Session, db_url: str):
 
         delta = datetime.datetime.now() - begin
         if delta.total_seconds() > 20:
-            pending = db.query(models.Task).filter(
-                models.Task.state == models.TaskState.PENDING
-            ).count()
-            failed = db.query(models.Task).filter(
-                models.Task.state == models.TaskState.FAILED
-            ).count()
+            pending = (
+                db.query(models.Task)
+                .filter(models.Task.state == models.TaskState.PENDING)
+                .count()
+            )
+            failed = (
+                db.query(models.Task)
+                .filter(models.Task.state == models.TaskState.FAILED)
+                .count()
+            )
             raise TimeoutError(
                 f"Timeout waiting for retried tasks. "
                 f"Done: {done_tasks}/{task_count}, Pending: {pending}, Failed: {failed}"
