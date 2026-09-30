@@ -6,6 +6,7 @@ import inspect
 import logging
 import typing
 
+from sqlalchemy import inspect as sa_inspect
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import async_object_session
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -22,6 +23,15 @@ def _require_async_session(task: models.Task) -> AsyncSession:
     if db is None:
         raise RuntimeError("Task is not attached to an AsyncSession")
     return db
+
+
+async def _reload_if_expired(db: AsyncSession, task: models.Task):
+    # Nested rollback expires every attribute, including the primary key.
+    # Auto-complete reads task.id on the event loop; that load needs a
+    # greenlet and raises MissingGreenlet.
+    state = sa_inspect(task)
+    if state.expired or "id" in state.expired_attributes:
+        await db.refresh(task)
 
 
 @dataclasses.dataclass(frozen=True)
@@ -86,6 +96,7 @@ class Processor:
                 db.add(task)
                 return
             if self.auto_complete:
+                await _reload_if_expired(db, task)
                 logger.info("Task %s auto complete", task.id)
                 task.state = models.TaskState.DONE
                 task.result = result
