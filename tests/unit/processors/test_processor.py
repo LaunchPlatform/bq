@@ -131,6 +131,36 @@ async def test_process_savepoint_rollback(
     assert task.func_name == "my_func"
 
 
+async def test_auto_complete_after_nested_rollback(
+    async_db: AsyncSession,
+    task: models.Task,
+):
+    async def func(task, db):
+        async with db.begin_nested() as savepoint:
+            task.error_message = "rolled-back"
+            await db.flush()
+            await savepoint.rollback()
+        return "ok"
+
+    task = await async_db.get(models.Task, task.id)
+    processor = Processor(
+        channel="mock-channel",
+        module="mock.module",
+        name="my_func",
+        func=func,
+        auto_complete=True,
+    )
+    assert await processor.process(task=task, event_cls=models.Event) == "ok"
+    await async_db.commit()
+    await async_db.refresh(task)
+    assert task.state == models.TaskState.DONE
+    assert task.result == "ok"
+    assert task.error_message is None
+    await async_db.refresh(task, attribute_names=["events"])
+    assert len(task.events) == 1
+    assert task.events[0].type == models.EventType.COMPLETE
+
+
 async def test_process_async_processor(
     async_db: AsyncSession,
     task: models.Task,
